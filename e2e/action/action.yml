@@ -1,0 +1,11 @@
+# probe-browser built from this checkout, for the e2e workflows. Probe
+# resolves an action before the first job starts, so the executable is
+# built before probe runs:
+#
+#   go build -o e2e/action/probe-browser . && probe e2e/workflow.yml
+name: browser
+description: Drive a browser with chromedp
+params: [actions, headless, window_w, window_h, evidence_dir, timeout]
+runs:
+  using: binary
+  path: probe-browser

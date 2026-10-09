@@ -1,0 +1,7 @@
+/probe-browser
+/dist/
+/e2e/action/probe-browser
+/e2e/capture_screenshot.png
+/probe
+/probe_linux_x86_64.tar.gz
+/checksums.txt

@@ -1,0 +1,47 @@
+name: Test
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/setup-go@4dc6199c7b1a012772edbd06daecab0f50c9053c # v6.1.0
+        with:
+          go-version-file: go.mod
+      - run: go vet ./...
+      - run: go test -race ./...
+
+  # The tests above use a mock in place of Chrome. This one runs the action
+  # through Probe against a fixture page in a real Chrome.
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Install Xvfb
+        run: sudo apt-get update && sudo apt-get install -y xvfb x11-utils
+      - name: Setup Chrome
+        uses: browser-actions/setup-chrome@b94431e051d1c52dcbe9a7092a4f10f827795416 # latest
+      - uses: actions/setup-go@4dc6199c7b1a012772edbd06daecab0f50c9053c # v6.1.0
+        with:
+          go-version-file: go.mod
+      # Probe resolves the action before the first job of a workflow, so it
+      # is built first.
+      - run: go build -o e2e/action/probe-browser .
+      # The probe the e2e workflow runs, checked against the digest of its
+      # release before anything runs from it.
+      - name: Download Probe
+        run: |
+          gh release download "$PROBE_VERSION" -R mozership/probe -p probe_linux_x86_64.tar.gz -p checksums.txt
+          sha256sum --check --ignore-missing checksums.txt
+          tar xzf probe_linux_x86_64.tar.gz probe
+          ./probe --version
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PROBE_VERSION: v1.21.0
+      - run: ./probe e2e/workflow.yml
