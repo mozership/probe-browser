@@ -1,0 +1,11 @@
+name: browser
+description: Drive a browser with chromedp
+params: [actions, headless, window_w, window_h, evidence_dir, timeout]
+runs:
+  using: binary
+  url: https://github.com/mozership/probe-browser/releases/download/v0.1.0/probe-browser_{os}_{arch}
+  checksums:
+    darwin_amd64: "2e61a653369b08a1b7cfa1b4020064baee3edb76e7da5869e3b5f173bbff609a"
+    darwin_arm64: "2eea354cf2de7bfb64c37bd3eee0082bd81525e4e60552152f23ca7babdb1603"
+    linux_amd64: "957a19ad6d14d1f67b7a0fd8aa23394e9afd9448475e8ad7fd14dd522ecb1481"
+    linux_arm64: "d5841b2f8fd34fba9ea76c6fee05bafdf23ed31f40d702fbcd2a7c32f5fc3214"
