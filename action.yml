@@ -1,3 +1,6 @@
+# It declares no guard: the action cannot tell what a page will do, so a
+# step that uses it is refused under --read-only or --allow-host unless
+# --allow-action names it.
 name: browser
 description: Drive a browser with chromedp
 params: [actions, headless, window_w, window_h, evidence_dir, timeout]
