@@ -3,6 +3,8 @@ description: |
   Waits for an element the fixture page does not have, so that e2e/workflow.yml
   can check the page is saved when the browser action fails.
   This workflow is expected to fail with an action error.
+actions:
+  browser: ./action
 vars:
   url: "{{ URL ?? 'http://localhost:8090' }}"
   evidence_dir: "{{ EVIDENCE_DIR ?? '/tmp/probe-browser-evidence' }}"
@@ -10,7 +12,7 @@ jobs:
 - name: Missing element
   steps:
   - name: Waits for an element that is not there
-    uses: ./action
+    uses: browser
     with:
       headless: true
       timeout: 15s
