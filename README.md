@@ -4,15 +4,25 @@ A [Probe](https://github.com/mozership/probe) action that drives a real Chrome t
 
 It was the built-in `browser` action of Probe up to v1.21.0. Probe downloads it the first time a workflow uses it, and it needs Probe v1.21.0 or later, which reads the params its `action.yml` declares for `probe check`.
 
-Probe only takes a full 40-character commit SHA in `uses`. The notes of each [release](https://github.com/mozership/probe-browser/releases) start with the `uses` line to copy.
+A workflow gives the action a name once, under `actions` at its top, and its steps use the name:
+
+```yaml
+actions:
+  browser: github.com/mozership/probe-browser@<commit SHA>
+```
+
+Probe only takes a full 40-character commit SHA there. The notes of each [release](https://github.com/mozership/probe-browser/releases) start with the action and its commit to copy. The examples below are of a workflow that has these lines.
+
+`actions` needs Probe v1.24.0 or later. With an earlier one, write the action in full in each `uses`, as `uses: github.com/mozership/probe-browser@<commit SHA>`.
+
 ## Basic Syntax
 
-A browser step lists what to do under `actions`, in order. Every step starts a fresh browser, runs its actions, and closes it, so cookies and a login do not carry over to the next step: put a whole flow in one step.
+A browser step lists what to do under the `actions` of its `with`, in order. They are not the `actions` at the top of a workflow, which names the action itself. Every step starts a fresh browser, runs its actions, and closes it, so cookies and a login do not carry over to the next step: put a whole flow in one step.
 
 ```yaml
 steps:
   - name: Read the heading
-    uses: github.com/mozership/probe-browser@<commit SHA>
+    uses: browser
     with:
       actions:
         - name: navigate
@@ -128,6 +138,8 @@ Each example is one step, since a step's actions share one browser and the next 
 A login and the check that it worked have to share one browser, so they are one step.
 
 ```yaml
+actions:
+  browser: github.com/mozership/probe-browser@<commit SHA>
 secrets:
   - PASSWORD
 vars:
@@ -139,7 +151,7 @@ jobs:
 - name: Sign in
   steps:
   - name: Log in and reach the dashboard
-    uses: github.com/mozership/probe-browser@<commit SHA>
+    uses: browser
     with:
       timeout: 30s
       actions:
@@ -167,7 +179,7 @@ Give each reading action an `id` so the results do not replace each other.
 
 ```yaml
   - name: Product page
-    uses: github.com/mozership/probe-browser@<commit SHA>
+    uses: browser
     with:
       actions:
         - name: navigate
@@ -196,7 +208,7 @@ The path of the saved image is in `res.filepaths`, ready to print or pass on.
 
 ```yaml
   - name: Checkout page
-    uses: github.com/mozership/probe-browser@<commit SHA>
+    uses: browser
     with:
       window_w: 1280
       window_h: 800
@@ -227,7 +239,7 @@ The files go to the system's temporary directory unless `evidence_dir` names ano
 
 ```yaml
 - name: Checkout page
-  uses: github.com/mozership/probe-browser@<commit SHA>
+  uses: browser
   with:
     evidence_dir: out/browser
     actions:

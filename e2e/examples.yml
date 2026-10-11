@@ -4,6 +4,9 @@ description: |
   Serve the fixture page first, as e2e/workflow.yml does:
   python3 -u -m http.server 8090 --bind 127.0.0.1 --directory e2e/fixture
 
+actions:
+  browser: ./action
+
 vars:
   ci: "{{ CI ?? '' }}"
   url: "{{ URL ?? 'http://localhost:8090' }}"
@@ -12,7 +15,7 @@ jobs:
 - name: Get element text
   steps:
   - name: Simple Navigation Test
-    uses: ./action
+    uses: browser
     with:
       headless: true
       timeout: 1m
@@ -34,7 +37,7 @@ jobs:
 - name: Capture screenshot
   steps:
   - name: Fixture page
-    uses: ./action
+    uses: browser
     with:
       window_w: 1280
       window_h: 800
