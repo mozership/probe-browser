@@ -62,6 +62,39 @@ jobs:
       res.results.equal == "Ready: 3 items" &&
       res.results.count == "Ready: 3 items"
 
+- name: Choose an option
+  steps:
+  - name: Choose by value, then by label
+    uses: browser
+    with:
+      headless: true
+      timeout: 1m
+      actions:
+      - name: navigate
+        url: "{{vars.url}}/"
+      - name: select
+        selector: "#size"
+        value: m
+      - name: wait_text
+        id: by_value
+        selector: "#chosen"
+        equals: "chosen: m"
+      - name: select
+        selector: "#size"
+        value: Large
+      - name: wait_text
+        id: by_label
+        selector: "#chosen"
+        equals: "chosen: l"
+      - name: value
+        id: size
+        selector: "#size"
+    test: |
+      res.code == 0 &&
+      res.results.by_value == "chosen: m" &&
+      res.results.by_label == "chosen: l" &&
+      res.results.size == "l"
+
 - name: Capture screenshot
   steps:
   - name: Fixture page

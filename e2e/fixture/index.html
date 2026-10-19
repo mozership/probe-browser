@@ -13,5 +13,20 @@
     // its data does, so wait_text has a text to wait for.
     setTimeout(() => { document.getElementById("status").textContent = "Ready: 3 items"; }, 1000);
   </script>
+  <label for="size">Size</label>
+  <select id="size">
+    <option value="s">Small</option>
+    <option value="m">Medium</option>
+    <option value="l">Large</option>
+    <option value="xl" disabled>Extra large</option>
+  </select>
+  <p id="chosen">none</p>
+  <script>
+    // The page learns of a choice only from its change event, so select has
+    // to fire it for the text to change.
+    document.getElementById("size").addEventListener("change", (e) => {
+      document.getElementById("chosen").textContent = "chosen: " + e.target.value;
+    });
+  </script>
 </body>
 </html>
