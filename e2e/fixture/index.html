@@ -7,5 +7,11 @@
 <body>
   <h1>Probe Browser Fixture</h1>
   <p>A local page for the browser action examples, so they do not depend on a site outside the test.</p>
+  <p id="status">Loading</p>
+  <script>
+    // The status changes after the page has loaded, as a page that fetches
+    // its data does, so wait_text has a text to wait for.
+    setTimeout(() => { document.getElementById("status").textContent = "Ready: 3 items"; }, 1000);
+  </script>
 </body>
 </html>

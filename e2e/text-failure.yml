@@ -1,0 +1,26 @@
+name: Browser Text Failure Evidence
+description: |
+  Waits for a text the fixture page never shows, so that e2e/workflow.yml can
+  check the step fails with the last text read and the page saved.
+  This workflow is expected to fail with an action error.
+actions:
+  browser: ./action
+vars:
+  url: "{{ URL ?? 'http://localhost:8090' }}"
+  evidence_dir: "{{ EVIDENCE_DIR ?? '/tmp/probe-browser-evidence' }}"
+jobs:
+- name: Unexpected text
+  steps:
+  - name: Waits for a text that never comes
+    uses: browser
+    with:
+      headless: true
+      timeout: 5s
+      evidence_dir: "{{vars.evidence_dir}}"
+      actions:
+      - name: navigate
+        url: "{{vars.url}}/"
+      - name: wait_text
+        selector: "#status"
+        equals: Done
+    test: res.code == 0

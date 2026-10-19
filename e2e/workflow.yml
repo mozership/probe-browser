@@ -78,3 +78,20 @@ jobs:
       res.stdout matches "probe-browser-failure-[0-9]+\\.html" &&
       res.stdout contains "html-ok" &&
       res.stdout contains "png-ok"
+
+  - name: A text that never comes fails with the last text read
+    uses: shell
+    with:
+      cmd: |
+        dir=$(mktemp -d)
+        EVIDENCE_DIR="$dir" ./probe e2e/text-failure.yml
+        echo "exit=$?"
+        ls "$dir"
+        rm -rf "$dir"
+      timeout: 1m
+      env:
+        DISPLAY: ":99"
+    test: |
+      res.stdout contains "exit=3" &&
+      res.stdout contains 'wait_text "#status": the text was "Ready: 3 items", want "Done"' &&
+      res.stdout matches "probe-browser-failure-[0-9]+\\.png"

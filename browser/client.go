@@ -134,9 +134,14 @@ type ChromeDPAction struct {
 	Value     string   `map:"value"`
 	Path      string   `map:"path"` // Deprecated: use FilePath from results
 	Quality   int      `map:"quality"`
-	reText    *string
-	reBuf     *[]byte
-	filePath  *string // New: for binary file path
+	// Equals, Contains and Matches make wait_text wait until the text is
+	// the one expected, rather than read it once it is visible.
+	Equals   string `map:"equals"`
+	Contains string `map:"contains"`
+	Matches  string `map:"matches"`
+	reText   *string
+	reBuf    *[]byte
+	filePath *string // New: for binary file path
 }
 
 func NewChromeDPAction() *ChromeDPAction {
@@ -320,6 +325,11 @@ func (req *Req) buildActionTasks() ([]chromedp.Action[chromedp.Void], error) {
 	tasks := []chromedp.Action[chromedp.Void]{}
 
 	for _, action := range req.Actions {
+		// Only wait_text waits for a text, so on any other action the fields
+		// would be ignored and a check the workflow asks for would not run.
+		if action.Name != "wait_text" && (action.Equals != "" || action.Contains != "" || action.Matches != "") {
+			return nil, fmt.Errorf("%s does not take equals, contains or matches: only wait_text does", action.Name)
+		}
 		switch action.Name {
 		case "navigate":
 			tasks = append(tasks, chromedp.Navigate(action.URL))
@@ -369,9 +379,17 @@ func (req *Req) buildActionTasks() ([]chromedp.Action[chromedp.Void], error) {
 				return nil, fmt.Errorf("attribute parameter is required for get_attribute action")
 			}
 		case "wait_text":
-			tasks = append(tasks, chromedp.WaitVisible(chromedp.CSS(action.Selector)))
+			m, err := action.textMatch()
+			if err != nil {
+				return nil, err
+			}
 			var text string
-			tasks = append(tasks, store(chromedp.Text(chromedp.CSS(action.Selector)), &text))
+			if m == nil {
+				tasks = append(tasks, chromedp.WaitVisible(chromedp.CSS(action.Selector)))
+				tasks = append(tasks, store(chromedp.Text(chromedp.CSS(action.Selector)), &text))
+			} else {
+				tasks = append(tasks, waitText(action.Selector, m, &text))
+			}
 			action.reText = &text
 		case "hover":
 			// The script runs in the page's global scope, so it is wrapped
