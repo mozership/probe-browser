@@ -1,9 +1,9 @@
 # The end-to-end tests: a fixture page served here, and the action built from
 # this checkout run against it through Probe, rather than against a public
 # site whose content can change under the test. Run it from the repository
-# root, with the action built and a probe at ./probe:
+# root, with the action built and probe on PATH:
 #
-#   go build -o e2e/action/probe-browser . && ./probe e2e/workflow.yml
+#   go build -o e2e/action/probe-browser . && probe e2e/workflow.yml
 #
 # On CI, where CI is set, the browser runs on an Xvfb display; elsewhere the
 # examples run headless.
@@ -48,7 +48,7 @@ jobs:
   - name: examples.yml
     uses: shell
     with:
-      cmd: ./probe e2e/examples.yml
+      cmd: probe e2e/examples.yml
       timeout: 2m
       env:
         DISPLAY: ":99"
@@ -60,7 +60,7 @@ jobs:
     with:
       cmd: |
         dir=$(mktemp -d)
-        EVIDENCE_DIR="$dir" ./probe e2e/failure.yml
+        EVIDENCE_DIR="$dir" probe e2e/failure.yml
         echo "exit=$?"
         ls "$dir"
         grep -q "<h1>Probe Browser Fixture</h1>" "$dir"/probe-browser-failure-*.html && echo html-ok
@@ -84,7 +84,7 @@ jobs:
     with:
       cmd: |
         dir=$(mktemp -d)
-        EVIDENCE_DIR="$dir" ./probe e2e/text-failure.yml
+        EVIDENCE_DIR="$dir" probe e2e/text-failure.yml
         echo "exit=$?"
         ls "$dir"
         rm -rf "$dir"
