@@ -1,0 +1,65 @@
+name: Browser Storage State
+description: |
+  Signs in on the fixture page in one step, and starts the next step's
+  browser signed in from the state the first one saved.
+  Serve the fixture page first, as e2e/workflow.yml does:
+  python3 -u -m http.server 8090 --bind 127.0.0.1 --directory e2e/fixture
+actions:
+  browser: ./action
+vars:
+  url: "{{ URL ?? 'http://localhost:8090' }}"
+jobs:
+- name: Carry a login over
+  steps:
+  - name: Sign in and save the state
+    id: login
+    uses: browser
+    with:
+      headless: true
+      timeout: 1m
+      actions:
+      - name: navigate
+        url: "{{vars.url}}/state.html"
+      - name: click
+        selector: "#sign-in"
+      - name: wait_text
+        selector: "#token"
+        equals: "token: t-42"
+      - name: save_storage_state
+        id: state
+    test: res.code == 0 && res.filepaths.state endsWith ".json"
+    outputs:
+      state: res.filepaths.state
+
+  - name: A new browser starts signed in
+    uses: browser
+    with:
+      headless: true
+      timeout: 1m
+      storage_state: "{{outputs.login.state}}"
+      actions:
+      - name: navigate
+        url: "{{vars.url}}/state.html"
+      - name: wait_text
+        id: cookie
+        selector: "#cookie"
+        contains: session=abc123
+      - name: wait_text
+        id: token
+        selector: "#token"
+        equals: "token: t-42"
+    test: res.code == 0
+
+  - name: Without it a new browser is signed out
+    uses: browser
+    with:
+      headless: true
+      timeout: 1m
+      actions:
+      - name: navigate
+        url: "{{vars.url}}/state.html"
+      - name: wait_text
+        id: token
+        selector: "#token"
+        equals: "token: none"
+    test: res.code == 0

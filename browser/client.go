@@ -144,6 +144,7 @@ type ChromeDPAction struct {
 	given    []string
 	reText   *string
 	reBuf    *[]byte
+	reState  *storageState
 	filePath *string // New: for binary file path
 }
 
@@ -160,7 +161,11 @@ type Req struct {
 	WindowH  int               `map:"window_h"`
 	// EvidenceDir is where the page is saved when the actions fail. Empty
 	// means the system's temporary directory.
-	EvidenceDir   string `map:"evidence_dir"`
+	EvidenceDir string `map:"evidence_dir"`
+	// StorageState names a file save_storage_state wrote, whose cookies and
+	// localStorage the browser starts with, so that a login carries over
+	// from an earlier step.
+	StorageState  string `map:"storage_state"`
 	Timeout       time.Duration
 	cb            *Callback
 	browserRunner BrowserRunner
@@ -328,6 +333,14 @@ func store[T any](a chromedp.Action[T], dst *T) chromedp.Action[chromedp.Void] {
 func (req *Req) buildActionTasks() ([]chromedp.Action[chromedp.Void], error) {
 	tasks := []chromedp.Action[chromedp.Void]{}
 
+	if req.StorageState != "" {
+		s, err := readStorageState(req.StorageState)
+		if err != nil {
+			return nil, err
+		}
+		tasks = append(tasks, loadStorageState(s))
+	}
+
 	for _, action := range req.Actions {
 		// Only wait_text waits for a text, so on any other action the fields
 		// would be ignored and a check the workflow asks for would not run.
@@ -433,6 +446,10 @@ func (req *Req) buildActionTasks() ([]chromedp.Action[chromedp.Void], error) {
 					el.dispatchEvent(event);
 				}
 			})()`, jsString(action.Selector))))
+		case "save_storage_state":
+			var s storageState
+			tasks = append(tasks, saveStorageState(&s))
+			action.reState = &s
 		default:
 			return nil, fmt.Errorf("unsupported action type: %s", action.Name)
 		}
@@ -455,6 +472,19 @@ func (req *Req) collectResults() (map[string]string, map[string]string, error) {
 			if action.reText != nil {
 				results[key] = *action.reText
 			}
+		case "save_storage_state":
+			if action.reState == nil {
+				continue
+			}
+			path, err := writeStorageState(action.reState, action.Path)
+			if err != nil {
+				return nil, nil, fmt.Errorf("failed to save the storage state: %w", err)
+			}
+			key := action.Name
+			if action.ID != "" {
+				key = action.ID
+			}
+			filePaths[key] = path
 		case "full_screenshot", "capture_screenshot", "screenshot":
 			if action.reBuf != nil && len(*action.reBuf) > 0 {
 				// Save screenshot to temporary file using our binary utility.

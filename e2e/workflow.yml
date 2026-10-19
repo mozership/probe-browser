@@ -55,6 +55,16 @@ jobs:
     test: res.code == 0
     echo: "{{res.stdout}}"
 
+  - name: state.yml
+    uses: shell
+    with:
+      cmd: probe e2e/state.yml
+      timeout: 2m
+      env:
+        DISPLAY: ":99"
+    test: res.code == 0
+    echo: "{{res.stdout}}"
+
   - name: A failed browser action saves the page
     uses: shell
     with:

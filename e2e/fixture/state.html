@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Probe Browser State Fixture</title>
+</head>
+<body>
+  <h1>Sign in</h1>
+  <button id="sign-in" type="button">Sign in</button>
+  <p id="cookie"></p>
+  <p id="token"></p>
+  <script>
+    // Signing in keeps a session in a cookie and a token in localStorage, as
+    // an app does, and the page shows both, so a later browser can tell
+    // whether it started with them.
+    const show = () => {
+      document.getElementById("cookie").textContent = "cookie: " + document.cookie;
+      document.getElementById("token").textContent = "token: " + (localStorage.getItem("token") ?? "none");
+    };
+    document.getElementById("sign-in").addEventListener("click", () => {
+      document.cookie = "session=abc123; path=/; max-age=3600";
+      localStorage.setItem("token", "t-42");
+      show();
+    });
+    show();
+  </script>
+</body>
+</html>

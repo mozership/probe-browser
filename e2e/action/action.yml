@@ -5,7 +5,7 @@
 #   go build -o e2e/action/probe-browser . && probe e2e/workflow.yml
 name: browser
 description: Drive a browser with chromedp
-params: [actions, headless, window_w, window_h, evidence_dir, timeout]
+params: [actions, headless, window_w, window_h, evidence_dir, storage_state, timeout]
 runs:
   using: binary
   path: probe-browser

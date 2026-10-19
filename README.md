@@ -17,7 +17,7 @@ Probe only takes a full 40-character commit SHA there. The notes of each [releas
 
 ## Basic Syntax
 
-A browser step lists what to do under the `actions` of its `with`, in order. They are not the `actions` at the top of a workflow, which names the action itself. Every step starts a fresh browser, runs its actions, and closes it, so cookies and a login do not carry over to the next step: put a whole flow in one step.
+A browser step lists what to do under the `actions` of its `with`, in order. They are not the `actions` at the top of a workflow, which names the action itself. Every step starts a fresh browser, runs its actions, and closes it, so cookies and a login do not carry over to the next step on their own: put a whole flow in one step, or save the login with `save_storage_state` and start the next step's browser from it, as described in [Carrying a login over](#carrying-a-login-over).
 
 ```yaml
 steps:
@@ -45,6 +45,7 @@ These go directly under `with`.
 | `window_w` | Integer | `1920` | Window width in pixels |
 | `window_h` | Integer | `1080` | Window height in pixels |
 | `evidence_dir` | String | the temporary directory | Where the page is saved when the actions fail. See [Page at failure](#page-at-failure) |
+| `storage_state` | String | none | A file `save_storage_state` wrote, whose cookies and localStorage the browser starts with. See [Carrying a login over](#carrying-a-login-over) |
 
 Starting Chrome takes part of `timeout`, often a second or more, so a short limit can run out before the first page opens.
 
@@ -61,7 +62,7 @@ Each entry of `actions` names its action in `name` and takes these fields:
 | `value` | `type`, `send_keys`, `select` | The text to use |
 | `attribute` | `get_attribute` | The attribute to read, as `href` or `[href]`. Of a list, only the first entry is read |
 | `quality` | `full_screenshot` | `1` to `99` saves JPEG at that quality. Anything else, including unset, `0`, `100` and above, or a negative number, saves PNG |
-| `path` | screenshots | Deprecated: also write the image to this path. Use `res.filepaths` instead |
+| `path` | screenshots, `save_storage_state` | Of a screenshot, deprecated: also write the image to this path; use `res.filepaths` instead. Of `save_storage_state`, where to write the file, in place of a new one in the temporary directory |
 | `equals` | `wait_text` | Wait until the text is exactly this. `equals: ""` waits for an empty text |
 | `contains` | `wait_text` | Wait until the text contains this |
 | `matches` | `wait_text` | Wait until the text matches this regular expression, in [Go's syntax](https://pkg.go.dev/regexp/syntax) |
@@ -120,6 +121,12 @@ These save an image file and put its path in `res.filepaths`, under `id` or the 
 | `full_screenshot` | The whole page, as PNG, or as JPEG when `quality` is `1` to `99` |
 | `screenshot` | Only `selector`, once it is visible, as PNG |
 
+### Storage state
+
+| Action | What it does |
+|--------|--------------|
+| `save_storage_state` | Writes the cookies of the browser and the localStorage of the page open into a JSON file, and puts its path in `res.filepaths`, under `id` or the action's name. The file goes to `path`, or to a new `probe-browser-state-*.json` in the temporary directory. See [Carrying a login over](#carrying-a-login-over) |
+
 ## Response Object
 
 When every action succeeds, the step sees:
@@ -128,7 +135,7 @@ When every action succeeds, the step sees:
 |-------|------|-------------|
 | `res.code` | Integer | `0` |
 | `res.results` | Object | What the reading actions returned, by `id` or action name |
-| `res.filepaths` | Object | Where the screenshots were saved, by `id` or action name |
+| `res.filepaths` | Object | Where the screenshots and the storage states were saved, by `id` or action name |
 | `rt.duration` | String | How long the step took, such as `"663.268333ms"` |
 | `status` | Integer | `0` |
 
@@ -233,6 +240,54 @@ When the step's `timeout` runs out first, the step fails with an action error th
 ```
 wait_text "#status": the text was "Loading", want it to match "^\\d+ orders$": context deadline exceeded (page at failure: ...)
 ```
+
+### Carrying a login over
+
+A step that signs in can save the login with `save_storage_state`, and the steps after it start their browsers signed in by naming the file in `storage_state`, rather than each signing in again.
+
+```yaml
+  - name: Sign in
+    id: login
+    uses: browser
+    with:
+      timeout: 30s
+      actions:
+        - name: navigate
+          url: "{{vars.url}}/login"
+        - name: type
+          selector: "#username"
+          value: "{{vars.user}}"
+        - name: type
+          selector: "#password"
+          value: "{{vars.password}}"
+        - name: click
+          selector: "button[type='submit']"
+        - name: wait_visible
+          selector: "#dashboard"
+        - name: save_storage_state
+          id: state
+    test: res.code == 0
+    outputs:
+      state: res.filepaths.state
+
+  - name: Orders
+    uses: browser
+    with:
+      storage_state: "{{outputs.login.state}}"
+      actions:
+        - name: navigate
+          url: "{{vars.url}}/orders"
+        - name: wait_text
+          selector: "h1"
+          equals: "Orders"
+    test: res.code == 0
+```
+
+The file holds the cookies of every site the browser has, `HttpOnly` ones included, and the localStorage of the origin of the page open when it is saved; to keep the localStorage of another origin, save the state while a page of it is open. It has the shape of [Playwright's storage state](https://playwright.dev/docs/auth), so that either tool reads what the other writes.
+
+Before the first action, a browser given `storage_state` takes its cookies, and opens a page of each origin in it to write the localStorage there. Those pages are answered with an empty one inside the browser, so they reach no server and run none of the app's scripts, and the browser is back on `about:blank` when the first action runs. A file that is missing or is not a storage state fails the step before the browser starts, as when the step that writes it failed.
+
+The cookies sign in as the user, so the file is readable only by the user who ran Probe. Without `path` it goes to the temporary directory, which keeps it out of the repository; with `path`, keep it out of version control, and out of the files a CI run uploads.
 
 ### Keeping a screenshot
 
