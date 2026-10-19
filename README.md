@@ -106,7 +106,7 @@ These act on the page the way a user would. They return nothing.
 | `submit` | Submits the form `selector` belongs to |
 | `focus` | Focuses `selector` |
 | `scroll` | Scrolls `selector` into view |
-| `select` | Sets the `value` attribute of `selector` to `value`. It does not choose an option of a `<select>`; click the option instead |
+| `select` | Chooses the option of the `<select>` at `selector` whose value is `value`, or else whose label is, once it is visible, and fires `input` and `change` as a user's choice does. An option that is not there or is disabled, a `<select>` that is disabled, and an element that is not a `<select>`, fail the step with the reason, a `disabled` on an `<optgroup>` or a `<fieldset>` around them included; the values of the options are in the message. Of a `<select multiple>`, the option is added to those chosen |
 | `hover` | Sends a `mouseover` event to `selector`. It does not wait, and does nothing when nothing matches |
 | `right_click` | Sends a `contextmenu` event to `selector`. It does not wait, and does nothing when nothing matches |
 

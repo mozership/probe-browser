@@ -1,0 +1,90 @@
+name: Browser Select Failure
+description: |
+  Chooses options the fixture page cannot give, so that e2e/workflow.yml can
+  check each step fails with the reason rather than passes without a choice.
+  This workflow is expected to fail with action errors.
+actions:
+  browser: ./action
+vars:
+  url: "{{ URL ?? 'http://localhost:8090' }}"
+  evidence_dir: "{{ EVIDENCE_DIR ?? '/tmp/probe-browser-evidence' }}"
+jobs:
+- name: Missing option
+  steps:
+  - name: Chooses an option that is not there
+    uses: browser
+    with:
+      headless: true
+      timeout: 15s
+      evidence_dir: "{{vars.evidence_dir}}"
+      actions:
+      - name: navigate
+        url: "{{vars.url}}/"
+      - name: select
+        selector: "#size"
+        value: xxxl
+    test: res.code == 0
+
+- name: Disabled option
+  steps:
+  - name: Chooses an option that is disabled
+    uses: browser
+    with:
+      headless: true
+      timeout: 15s
+      evidence_dir: "{{vars.evidence_dir}}"
+      actions:
+      - name: navigate
+        url: "{{vars.url}}/"
+      - name: select
+        selector: "#size"
+        value: xl
+    test: res.code == 0
+
+- name: Option in a disabled group
+  steps:
+  - name: Chooses an option of an optgroup that is disabled
+    uses: browser
+    with:
+      headless: true
+      timeout: 15s
+      evidence_dir: "{{vars.evidence_dir}}"
+      actions:
+      - name: navigate
+        url: "{{vars.url}}/"
+      - name: select
+        selector: "#size"
+        value: xxl
+    test: res.code == 0
+
+- name: Select in a disabled fieldset
+  steps:
+  - name: Chooses an option of a select that is disabled
+    uses: browser
+    with:
+      headless: true
+      timeout: 15s
+      evidence_dir: "{{vars.evidence_dir}}"
+      actions:
+      - name: navigate
+        url: "{{vars.url}}/"
+      - name: select
+        selector: "#color"
+        value: red
+    test: res.code == 0
+
+- name: Not a select
+  steps:
+  - name: Chooses an option of a heading
+    uses: browser
+    with:
+      headless: true
+      timeout: 15s
+      evidence_dir: "{{vars.evidence_dir}}"
+      actions:
+      - name: navigate
+        url: "{{vars.url}}/"
+      - name: select
+        selector: h1
+        value: m
+    test: res.code == 0

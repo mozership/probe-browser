@@ -371,7 +371,7 @@ func (req *Req) buildActionTasks() ([]chromedp.Action[chromedp.Void], error) {
 		case "submit":
 			tasks = append(tasks, chromedp.Submit(action.Selector, chromedp.NodeVisible))
 		case "select":
-			tasks = append(tasks, chromedp.SetAttributeValue(action.Selector, "value", action.Value, chromedp.NodeVisible))
+			tasks = append(tasks, selectOption(action.Selector, action.Value))
 		case "scroll":
 			tasks = append(tasks, chromedp.ScrollIntoView(action.Selector, chromedp.NodeVisible))
 		case "get_attribute":
