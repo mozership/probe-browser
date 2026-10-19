@@ -116,19 +116,74 @@ func TestPollText(t *testing.T) {
 		}
 	})
 
-	t.Run("returns another error at once", func(t *testing.T) {
-		want := errors.New("target closed")
+	t.Run("reads again after an error", func(t *testing.T) {
+		// The page rendered again and replaced the element between finding
+		// it and reading it; the next read finds the new one.
 		calls := 0
 		read := func(context.Context) (string, error) {
 			calls++
-			return "", want
+			if calls == 1 {
+				return "", errors.New("could not find node with given id")
+			}
+			return "Ready", nil
 		}
 
-		_, err := pollText(context.Background(), "#status", &textMatch{equals: "Ready"}, read)
-		if !errors.Is(err, want) || calls != 1 {
-			t.Errorf("error = %v after %d reads, want %v after 1", err, calls, want)
+		got, err := pollText(context.Background(), "#status", &textMatch{equals: "Ready"}, read)
+		if err != nil || got != "Ready" {
+			t.Errorf("got %q, %v, want %q", got, err, "Ready")
 		}
 	})
+
+	t.Run("gives the last error when no text was read", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(context.Background(), 250*time.Millisecond)
+		defer cancel()
+		read := func(context.Context) (string, error) {
+			return "", errors.New("could not find node with given id")
+		}
+
+		_, err := pollText(ctx, "#status", &textMatch{equals: "Ready"}, read)
+		want := `wait_text "#status": the text could not be read (could not find node with given id), want "Ready"`
+		if !errors.Is(err, context.DeadlineExceeded) || !strings.Contains(err.Error(), want) {
+			t.Errorf("error = %v, want it to say %s and wrap the deadline", err, want)
+		}
+	})
+}
+
+func TestParseData_EmptyTextFields(t *testing.T) {
+	testCases := []struct {
+		name    string
+		action  map[string]any
+		wantErr string
+	}{
+		{"equals \"\" waits for an empty text", map[string]any{"name": "wait_text", "selector": "#s", "equals": ""}, ""},
+		{"contains \"\" is refused", map[string]any{"name": "wait_text", "selector": "#s", "contains": ""}, "contains is empty"},
+		{"matches \"\" is refused", map[string]any{"name": "wait_text", "selector": "#s", "matches": ""}, "matches is empty"},
+		{"equals \"\" with contains is more than one", map[string]any{"name": "wait_text", "selector": "#s", "equals": "", "contains": "a"}, "only one of"},
+		{"equals \"\" on another action is refused", map[string]any{"name": "text", "selector": "#s", "equals": ""}, "text does not take equals"},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			req := NewReq()
+			if err := req.parseData(map[string]any{"actions": []any{tc.action}}, nil); err != nil {
+				t.Fatalf("parseData failed: %v", err)
+			}
+			_, err := req.buildActionTasks()
+			if tc.wantErr == "" {
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+				m, _ := req.Actions[0].textMatch()
+				if m == nil || !m.ok("") || m.ok("Loading") {
+					t.Errorf("match = %v, want one that accepts only an empty text", m)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+				t.Errorf("error = %v, want it to say %q", err, tc.wantErr)
+			}
+		})
+	}
 }
 
 func TestWaitTextActionMapping(t *testing.T) {

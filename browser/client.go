@@ -139,6 +139,9 @@ type ChromeDPAction struct {
 	Equals   string `map:"equals"`
 	Contains string `map:"contains"`
 	Matches  string `map:"matches"`
+	// given names which of equals, contains and matches the workflow wrote,
+	// since an empty string is otherwise the same as one left out.
+	given    []string
 	reText   *string
 	reBuf    *[]byte
 	filePath *string // New: for binary file path
@@ -206,6 +209,7 @@ func (req *Req) parseData(data map[string]any, opts []Option) error {
 	if err != nil {
 		return fmt.Errorf("MapToStructByTags failed: %w", err)
 	}
+	markGivenTextFields(data, req.Actions)
 
 	// timeout takes "30s", 30 or "30", like the other actions. It used to
 	// accept only a duration string and silently keep the default for
@@ -327,7 +331,7 @@ func (req *Req) buildActionTasks() ([]chromedp.Action[chromedp.Void], error) {
 	for _, action := range req.Actions {
 		// Only wait_text waits for a text, so on any other action the fields
 		// would be ignored and a check the workflow asks for would not run.
-		if action.Name != "wait_text" && (action.Equals != "" || action.Contains != "" || action.Matches != "") {
+		if action.Name != "wait_text" && len(action.textFields()) > 0 {
 			return nil, fmt.Errorf("%s does not take equals, contains or matches: only wait_text does", action.Name)
 		}
 		switch action.Name {

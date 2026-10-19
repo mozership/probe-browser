@@ -62,11 +62,11 @@ Each entry of `actions` names its action in `name` and takes these fields:
 | `attribute` | `get_attribute` | The attribute to read, as `href` or `[href]`. Of a list, only the first entry is read |
 | `quality` | `full_screenshot` | `1` to `99` saves JPEG at that quality. Anything else, including unset, `0`, `100` and above, or a negative number, saves PNG |
 | `path` | screenshots | Deprecated: also write the image to this path. Use `res.filepaths` instead |
-| `equals` | `wait_text` | Wait until the text is exactly this |
+| `equals` | `wait_text` | Wait until the text is exactly this. `equals: ""` waits for an empty text |
 | `contains` | `wait_text` | Wait until the text contains this |
-| `matches` | `wait_text` | Wait until the text matches this regular expression, in [Go's syntax](https://pkg.go.dev/regexp/syntax). `'^$'` waits for an empty text |
+| `matches` | `wait_text` | Wait until the text matches this regular expression, in [Go's syntax](https://pkg.go.dev/regexp/syntax) |
 
-A `wait_text` takes at most one of `equals`, `contains` and `matches`, and no other action takes them; a workflow that sets them otherwise is refused before the browser starts.
+A `wait_text` takes at most one of `equals`, `contains` and `matches`, and no other action takes them. An empty `contains` or `matches` is refused too, since any text would pass it. A workflow that sets them otherwise is refused before the browser starts.
 
 An action that looks for an element waits until the element appears, and the step fails when `timeout` runs out first. Most of them also wait for it to be visible.
 

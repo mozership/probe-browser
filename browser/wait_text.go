@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -21,22 +22,66 @@ type textMatch struct {
 	matches  *regexp.Regexp
 }
 
+// markGivenTextFields records, on each action, which of equals, contains and
+// matches the workflow wrote as a string. The mapper leaves a field empty
+// both when it is written as "" and when it is left out, so without this
+// equals: "" would not wait for an empty text but skip the check.
+func markGivenTextFields(data map[string]any, actions []*ChromeDPAction) {
+	raw, ok := data["actions"].([]any)
+	if !ok {
+		return
+	}
+	for i, a := range raw {
+		action, ok := a.(map[string]any)
+		if !ok || i >= len(actions) {
+			continue
+		}
+		for _, key := range []string{"equals", "contains", "matches"} {
+			if _, isString := action[key].(string); isString {
+				actions[i].given = append(actions[i].given, key)
+			}
+		}
+	}
+}
+
+// textFields returns which of equals, contains and matches the action sets:
+// those not empty, and those the workflow wrote as "".
+func (a *ChromeDPAction) textFields() []string {
+	var fields []string
+	for _, f := range []struct{ key, value string }{
+		{"equals", a.Equals}, {"contains", a.Contains}, {"matches", a.Matches},
+	} {
+		if f.value != "" || slices.Contains(a.given, f.key) {
+			fields = append(fields, f.key)
+		}
+	}
+	return fields
+}
+
 // textMatch returns what the action's wait_text waits for, or nil when it
 // waits only for the element to be visible. Setting more than one of equals,
 // contains and matches is refused, since a text that meets one of them and
 // not the other would leave which one counts unclear.
 func (a *ChromeDPAction) textMatch() (*textMatch, error) {
-	set := 0
-	for _, s := range []string{a.Equals, a.Contains, a.Matches} {
-		if s != "" {
-			set++
-		}
-	}
+	fields := a.textFields()
 	switch {
-	case set == 0:
+	case len(fields) == 0:
 		return nil, nil
-	case set > 1:
+	case len(fields) > 1:
 		return nil, fmt.Errorf("wait_text takes only one of equals, contains and matches")
+	}
+
+	// An empty contains or matches accepts any text, so the step would pass
+	// whatever the page shows.
+	switch fields[0] {
+	case "contains":
+		if a.Contains == "" {
+			return nil, fmt.Errorf("wait_text contains is empty, which any text contains: use equals: \"\" to wait for an empty text")
+		}
+	case "matches":
+		if a.Matches == "" {
+			return nil, fmt.Errorf("wait_text matches is empty, which any text matches: use '^$' to wait for an empty text")
+		}
 	}
 
 	m := &textMatch{equals: a.Equals, contains: a.Contains}
@@ -89,27 +134,36 @@ func waitText(sel string, m *textMatch, dst *string) chromedp.Action[chromedp.Vo
 
 // pollText calls read until the text it returns is the one m expects, or ctx
 // ends. read waits for the element to be visible, so a page that renders it
-// late is waited for too. When ctx ends, the error gives the last text read,
-// which is what a failure is diagnosed from.
+// late is waited for too. An error from read is not the end either: a page
+// that renders again can replace the element between finding it and reading
+// it, and the next read finds the new one. When ctx ends, the error gives
+// the last text read, or the last error when no text was, which is what a
+// failure is diagnosed from.
 func pollText(ctx context.Context, sel string, m *textMatch, read func(context.Context) (string, error)) (string, error) {
 	last, seen := "", false
+	var lastErr error
 	for {
 		text, err := read(ctx)
-		if err == nil {
+		switch {
+		case err == nil:
 			if m.ok(text) {
 				return text, nil
 			}
 			last, seen = text, true
-		} else if ctx.Err() == nil {
-			return "", err
+		case ctx.Err() == nil:
+			lastErr = err
 		}
 
 		select {
 		case <-ctx.Done():
-			if !seen {
+			switch {
+			case seen:
+				return "", fmt.Errorf("wait_text %q: the text was %q, %s: %w", sel, last, m, ctx.Err())
+			case lastErr != nil:
+				return "", fmt.Errorf("wait_text %q: the text could not be read (%v), %s: %w", sel, lastErr, m, ctx.Err())
+			default:
 				return "", fmt.Errorf("wait_text %q: no visible element matched, %s: %w", sel, m, ctx.Err())
 			}
-			return "", fmt.Errorf("wait_text %q: the text was %q, %s: %w", sel, last, m, ctx.Err())
 		case <-time.After(textPollInterval):
 		}
 	}
