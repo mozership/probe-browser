@@ -33,15 +33,11 @@ jobs:
       # Probe resolves the action before the first job of a workflow, so it
       # is built first.
       - run: go build -o e2e/action/probe-browser .
-      # The probe the e2e workflow runs, checked against the digest of its
-      # release before anything runs from it.
-      - name: Download Probe
-        run: |
-          gh release download "$PROBE_VERSION" -R mozership/probe -p probe_linux_x86_64.tar.gz -p checksums.txt
-          sha256sum --check --ignore-missing checksums.txt
-          tar xzf probe_linux_x86_64.tar.gz probe
-          ./probe --version
-        env:
-          GH_TOKEN: ${{ github.token }}
-          PROBE_VERSION: v1.25.0
-      - run: ./probe e2e/workflow.yml
+      # probe-action checks probe against the digest of its release before
+      # running the workflow, and adds it to PATH for the workflows that the
+      # e2e workflow runs in turn.
+      - name: Run the e2e workflow
+        uses: mozership/probe-action@831b8b6c6aa0c8a61aa75b58f36a08da5c579e83 # v1.3.0
+        with:
+          path: e2e/workflow.yml
+          version: v1.25.0

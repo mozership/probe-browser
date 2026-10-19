@@ -62,6 +62,11 @@ Each entry of `actions` names its action in `name` and takes these fields:
 | `attribute` | `get_attribute` | The attribute to read, as `href` or `[href]`. Of a list, only the first entry is read |
 | `quality` | `full_screenshot` | `1` to `99` saves JPEG at that quality. Anything else, including unset, `0`, `100` and above, or a negative number, saves PNG |
 | `path` | screenshots | Deprecated: also write the image to this path. Use `res.filepaths` instead |
+| `equals` | `wait_text` | Wait until the text is exactly this. `equals: ""` waits for an empty text |
+| `contains` | `wait_text` | Wait until the text contains this |
+| `matches` | `wait_text` | Wait until the text matches this regular expression, in [Go's syntax](https://pkg.go.dev/regexp/syntax) |
+
+A `wait_text` takes at most one of `equals`, `contains` and `matches`, and no other action takes them. An empty `contains` or `matches` is refused too, since any text would pass it. A workflow that sets them otherwise is refused before the browser starts.
 
 An action that looks for an element waits until the element appears, and the step fails when `timeout` runs out first. Most of them also wait for it to be visible.
 
@@ -84,7 +89,7 @@ These put a string in `res.results`, under `id` or the action's name.
 | Action | Result |
 |--------|--------|
 | `text` | The text content of `selector` |
-| `wait_text` | Waits until `selector` is visible, then its text content |
+| `wait_text` | Waits until `selector` is visible, then its text content. With `equals`, `contains` or `matches`, it also waits until the text is the one expected. See [Waiting for a text](#waiting-for-a-text) |
 | `value` | The value of a form field, such as an `input` |
 | `get_attribute` | The first attribute in `attribute` of `selector`, or an empty string when the element does not have it |
 | `get_html` | The outer HTML of `selector`, once it is visible |
@@ -202,6 +207,33 @@ Give each reading action an `id` so the results do not replace each other.
       image_url: res.results.image
 ```
 
+### Waiting for a text
+
+A page that fetches its data shows it a moment after it loads, so a `text` read as soon as the element is visible can get `Loading` and fail the test. A `wait_text` with `equals`, `contains` or `matches` reads the text again until it is the one expected.
+
+```yaml
+  - name: Order list
+    uses: browser
+    with:
+      timeout: 30s
+      actions:
+        - name: navigate
+          url: "{{vars.url}}/orders"
+        - name: wait_text
+          id: status
+          selector: "#status"
+          matches: '^\d+ orders$'
+    test: res.code == 0
+    outputs:
+      status: res.results.status
+```
+
+When the step's `timeout` runs out first, the step fails with an action error that gives the last text read, and the page is saved, as described in [Page at failure](#page-at-failure):
+
+```
+wait_text "#status": the text was "Loading", want it to match "^\\d+ orders$": context deadline exceeded (page at failure: ...)
+```
+
 ### Keeping a screenshot
 
 The path of the saved image is in `res.filepaths`, ready to print or pass on.
@@ -233,7 +265,7 @@ When the actions fail, Probe saves the page as it was at that moment: a full-pag
 action error in step_execute: action execution failed (caused by: ... context deadline exceeded (page at failure: url http://localhost:8090/, screenshot /tmp/probe-browser-failure-1947177907.png, html /tmp/probe-browser-failure-1947177907.html))
 ```
 
-The same message is the failure's `message` in the files `--report` writes. A test that evaluates to false is not an action failure, so the page is not saved then; add a `capture_screenshot` action to keep it.
+The same message is the failure's `message` in the files `--report` writes. A test that evaluates to false is not an action failure, so the page is not saved then. To have it saved when a text is not the one expected, check the text with a [`wait_text`](#waiting-for-a-text) and `equals`, `contains` or `matches` rather than in `test`, or add a `capture_screenshot` action to keep the page in any case.
 
 The files go to the system's temporary directory unless `evidence_dir` names another. The directory is created when needed, which suits uploading it as a CI artifact. The page can show private data, so the files are readable only by the user who ran Probe:
 
@@ -273,7 +305,7 @@ The package `github.com/mozership/probe-browser/browser` is the action itself, f
 `go test ./...` runs the action against a mock in place of Chrome. `e2e/workflow.yml` serves a fixture page and runs the action through Probe in a real Chrome:
 
 ```sh
-go build -o e2e/action/probe-browser . && ./probe e2e/workflow.yml
+go build -o e2e/action/probe-browser . && probe e2e/workflow.yml
 ```
 
 ## Releasing

@@ -34,6 +34,34 @@ jobs:
     outputs:
       load_time: rt.duration
 
+- name: Wait for a text
+  steps:
+  - name: Status that changes after loading
+    uses: browser
+    with:
+      headless: true
+      timeout: 1m
+      actions:
+      - name: navigate
+        url: "{{vars.url}}/"
+      - name: wait_text
+        id: ready
+        selector: "#status"
+        contains: Ready
+      - name: wait_text
+        id: equal
+        selector: "#status"
+        equals: "Ready: 3 items"
+      - name: wait_text
+        id: count
+        selector: "#status"
+        matches: '\d+ items$'
+    test: |
+      res.code == 0 &&
+      res.results.ready == "Ready: 3 items" &&
+      res.results.equal == "Ready: 3 items" &&
+      res.results.count == "Ready: 3 items"
+
 - name: Capture screenshot
   steps:
   - name: Fixture page
