@@ -20,12 +20,17 @@ const selectScript = `((sel, want) => {
 	if (el.tagName !== "SELECT") {
 		return "the element is a <" + el.tagName.toLowerCase() + ">, not a <select>: use type to fill a field";
 	}
+	// :disabled, unlike the disabled property, also holds for a <select> in
+	// a <fieldset disabled> and an option in an <optgroup disabled>.
+	if (el.matches(":disabled")) {
+		return "the <select> is disabled";
+	}
 	const options = Array.from(el.options);
 	const option = options.find(o => o.value === want) ?? options.find(o => o.label === want);
 	if (!option) {
 		return "no option has the value or label " + JSON.stringify(want) + "; the values are " + JSON.stringify(options.map(o => o.value));
 	}
-	if (option.disabled || el.disabled) {
+	if (option.matches(":disabled")) {
 		return "the option " + JSON.stringify(want) + " is disabled";
 	}
 	option.selected = true;

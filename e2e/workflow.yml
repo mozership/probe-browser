@@ -109,6 +109,8 @@ jobs:
         DISPLAY: ":99"
     test: |
       res.stdout contains "exit=3" &&
-      res.stdout contains 'select "#size": no option has the value or label "xxl"; the values are ["s","m","l","xl"]' &&
+      res.stdout contains 'select "#size": no option has the value or label "xxxl"; the values are ["s","m","l","xl","xxl"]' &&
       res.stdout contains 'select "#size": the option "xl" is disabled' &&
+      res.stdout contains 'select "#size": the option "xxl" is disabled' &&
+      res.stdout contains 'select "#color": the <select> is disabled' &&
       res.stdout contains 'select "h1": the element is a <h1>, not a <select>'

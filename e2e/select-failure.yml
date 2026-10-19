@@ -22,7 +22,7 @@ jobs:
         url: "{{vars.url}}/"
       - name: select
         selector: "#size"
-        value: xxl
+        value: xxxl
     test: res.code == 0
 
 - name: Disabled option
@@ -39,6 +39,38 @@ jobs:
       - name: select
         selector: "#size"
         value: xl
+    test: res.code == 0
+
+- name: Option in a disabled group
+  steps:
+  - name: Chooses an option of an optgroup that is disabled
+    uses: browser
+    with:
+      headless: true
+      timeout: 15s
+      evidence_dir: "{{vars.evidence_dir}}"
+      actions:
+      - name: navigate
+        url: "{{vars.url}}/"
+      - name: select
+        selector: "#size"
+        value: xxl
+    test: res.code == 0
+
+- name: Select in a disabled fieldset
+  steps:
+  - name: Chooses an option of a select that is disabled
+    uses: browser
+    with:
+      headless: true
+      timeout: 15s
+      evidence_dir: "{{vars.evidence_dir}}"
+      actions:
+      - name: navigate
+        url: "{{vars.url}}/"
+      - name: select
+        selector: "#color"
+        value: red
     test: res.code == 0
 
 - name: Not a select
