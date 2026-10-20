@@ -2,7 +2,7 @@ name: Browser Examples
 description: |
   Minimal test to verify browser can start.
   Serve the fixture page first, as e2e/workflow.yml does:
-  python3 -u -m http.server 8090 --bind 127.0.0.1 --directory e2e/fixture
+  go run ./e2e/server
 
 actions:
   browser: ./action
