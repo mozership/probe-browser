@@ -3,7 +3,7 @@
 # --allow-action names it.
 name: browser
 description: Drive a browser with chromedp
-params: [actions, headless, window_w, window_h, evidence_dir, timeout]
+params: [actions, headless, window_w, window_h, evidence_dir, storage_state, timeout]
 runs:
   using: binary
   url: https://github.com/mozership/probe-browser/releases/download/v0.1.0/probe-browser_{os}_{arch}
