@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"iter"
 	"maps"
 	"net/http"
 	"os"
@@ -39,6 +40,12 @@ type BrowserRunner interface {
 	Run(ctx context.Context, actions ...chromedp.Action[chromedp.Void]) error
 }
 
+// consoleReader is a BrowserRunner that reads the console of the page, so
+// that the errors the page wrote while the actions ran are in the result.
+type consoleReader interface {
+	Console(ctx context.Context) iter.Seq2[chromedp.ConsoleMessage, error]
+}
+
 // ChromeDPRunner implements BrowserRunner using the actual ChromeDP
 type ChromeDPRunner struct{}
 
@@ -50,6 +57,11 @@ func (r *ChromeDPRunner) Start(ctx context.Context) error {
 // Run executes actions using ChromeDP
 func (r *ChromeDPRunner) Run(ctx context.Context, actions ...chromedp.Action[chromedp.Void]) error {
 	return chromedp.Do(ctx, actions...)
+}
+
+// Console subscribes to the console of the page.
+func (r *ChromeDPRunner) Console(ctx context.Context) iter.Seq2[chromedp.ConsoleMessage, error] {
+	return chromedp.Console(ctx)
 }
 
 // MockRunner implements BrowserRunner for testing
@@ -188,6 +200,9 @@ type Res struct {
 	Code      int               `map:"code"`
 	Results   map[string]string `map:"results"`
 	FilePaths map[string]string `map:"filepaths"` // New: for binary file paths (action_id -> filepath)
+	// ConsoleErrors are the errors the page wrote to its console while the
+	// actions ran, in the order it wrote them.
+	ConsoleErrors []ConsoleError `map:"console_errors"`
 }
 
 type Result struct {
@@ -542,12 +557,19 @@ func (req *Req) do() (*Result, error) {
 		return nil, fmt.Errorf("%w (the page could not be captured: the browser did not start)", err)
 	}
 
+	var console *consoleRecorder
+	if c, ok := req.browserRunner.(consoleReader); ok {
+		console = recordConsole(browserCtx, c.Console)
+	}
+
 	ctx, actionsCancel := context.WithDeadline(browserCtx, deadline)
 	defer actionsCancel()
 
 	if err := req.browserRunner.Run(ctx, tasks...); err != nil {
-		return nil, req.withEvidence(browserCtx, err)
+		errs := console.stop(browserCtx, req.browserRunner.Run)
+		return nil, req.withEvidence(browserCtx, withConsoleErrors(err, errs))
 	}
+	consoleErrors := console.stop(browserCtx, req.browserRunner.Run)
 
 	results, filePaths, err := req.collectResults()
 	if err != nil {
@@ -555,9 +577,10 @@ func (req *Req) do() (*Result, error) {
 	}
 
 	res := &Res{
-		Code:      0,
-		Results:   results,
-		FilePaths: filePaths,
+		Code:          0,
+		Results:       results,
+		FilePaths:     filePaths,
+		ConsoleErrors: consoleErrors,
 	}
 	ret := &Result{
 		Req:    *req,

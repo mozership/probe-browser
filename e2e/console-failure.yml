@@ -1,0 +1,28 @@
+name: Browser Console Failure
+description: |
+  Throws on the fixture page and then waits for an element that never
+  comes, so that e2e/workflow.yml can check the failure names the error.
+  This workflow is expected to fail with an action error.
+actions:
+  browser: ./action
+vars:
+  url: "{{ URL ?? 'http://localhost:8090' }}"
+  evidence_dir: "{{ EVIDENCE_DIR ?? '/tmp/probe-browser-evidence' }}"
+jobs:
+- name: A click that broke the page
+  steps:
+  - name: Waits for what the handler never shows
+    uses: browser
+    with:
+      headless: true
+      timeout: 5s
+      evidence_dir: "{{vars.evidence_dir}}"
+      actions:
+      - name: navigate
+        url: "{{vars.url}}/console.html"
+      - name: click
+        selector: "#throw"
+      - name: wait_text
+        selector: "#done"
+        equals: done
+    test: res.code == 0

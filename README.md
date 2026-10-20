@@ -136,6 +136,7 @@ When every action succeeds, the step sees:
 | `res.code` | Integer | `0` |
 | `res.results` | Object | What the reading actions returned, by `id` or action name |
 | `res.filepaths` | Object | Where the screenshots and the storage states were saved, by `id` or action name |
+| `res.console_errors` | List | The errors the page wrote to its console while the actions ran, in order. See [Checking the console](#checking-the-console) |
 | `rt.duration` | String | How long the step took, such as `"663.268333ms"` |
 | `status` | Integer | `0` |
 
@@ -289,6 +290,41 @@ Before the first action, a browser given `storage_state` takes its cookies, and 
 
 The cookies sign in as the user, so the file is readable only by the user who ran Probe. Without `path` it goes to the temporary directory, which keeps it out of the repository; with `path`, keep it out of version control, and out of the files a CI run uploads.
 
+### Checking the console
+
+A page can break behind what it shows, such as a click handler that throws. `res.console_errors` lists what the page wrote to its console as an error while the actions ran: each call of `console.error`, each `console.assert` that failed, and each exception or promise rejection nothing caught. Each has these fields:
+
+| Field | Description |
+|-------|-------------|
+| `type` | `error`, `assert` or `exception` |
+| `text` | What the DevTools console shows. An exception's begins with `Uncaught`, or `Uncaught (in promise)` for a rejection |
+| `url`, `line`, `column` | Where it came from, the line and the column counted from 1 as in DevTools. Empty and `0` when the browser does not say |
+
+The browser's own messages, such as a resource that failed to load, are not among them, nor are logs and warnings. The errors are read from the page's tab, so those of a popup, or of an iframe from another site, are not either.
+
+To fail the step on any error, test that the list is empty:
+
+```yaml
+  - name: Checkout page
+    uses: browser
+    with:
+      actions:
+        - name: navigate
+          url: "{{vars.url}}/checkout"
+        - name: click
+          selector: "#pay"
+        - name: wait_visible
+          selector: "#receipt"
+    test: res.code == 0 && len(res.console_errors) == 0
+    echo: "{{res.console_errors}}"
+```
+
+When an action fails, the failure message names the first few of them, as one is often why it failed:
+
+```
+action error in step_execute: action execution failed (caused by: ... context deadline exceeded (console errors: "Uncaught TypeError: Cannot read properties of null (reading 'total') (http://localhost:8090/checkout.js:42:17)") (page at failure: ...))
+```
+
 ### Keeping a screenshot
 
 The path of the saved image is in `res.filepaths`, ready to print or pass on.
@@ -310,7 +346,7 @@ The path of the saved image is in `res.filepaths`, ready to print or pass on.
 
 ## Error Handling
 
-An action that cannot finish makes the whole step fail with an action error, which exits the run with status `3`. A selector that matches nothing is not an empty result: `wait_visible`, `text`, `click` and the other actions that look for an element keep waiting until the step's `timeout`. A navigation fails as soon as the browser reports a network error, such as a refused connection, while an address that never answers also waits until `timeout`. In every case there is no `res` to test, and the failure message carries the browser's error.
+An action that cannot finish makes the whole step fail with an action error, which exits the run with status `3`. A selector that matches nothing is not an empty result: `wait_visible`, `text`, `click` and the other actions that look for an element keep waiting until the step's `timeout`. A navigation fails as soon as the browser reports a network error, such as a refused connection, while an address that never answers also waits until `timeout`. In every case there is no `res` to test, and the failure message carries the browser's error, along with the errors the page wrote to its console, as [Checking the console](#checking-the-console) shows.
 
 ### Page at failure
 
