@@ -1,0 +1,55 @@
+name: Browser Console Errors
+description: |
+  Opens the fixture page that writes errors to its console, and checks that
+  the result holds them, and only them.
+  Serve the fixture page first, as e2e/workflow.yml does:
+  go run ./e2e/server
+actions:
+  browser: ./action
+vars:
+  url: "{{ URL ?? 'http://localhost:8090' }}"
+jobs:
+- name: Console errors
+  steps:
+  - name: The errors the page wrote
+    uses: browser
+    with:
+      headless: true
+      timeout: 1m
+      actions:
+      - name: navigate
+        url: "{{vars.url}}/console.html"
+      - name: click
+        selector: "#throw"
+      - name: click
+        selector: "#reject"
+      - name: wait_text
+        selector: "#done"
+        equals: done
+    test: |
+      res.code == 0 &&
+      len(res.console_errors) == 4 &&
+      res.console_errors[0].type == "error" &&
+      res.console_errors[0].text == "boot: config failed" &&
+      res.console_errors[0].url endsWith "/console.html" &&
+      res.console_errors[0].line > 0 &&
+      res.console_errors[1].type == "assert" &&
+      res.console_errors[1].text contains "one is not two" &&
+      res.console_errors[2].type == "exception" &&
+      res.console_errors[2].text startsWith "Uncaught TypeError" &&
+      res.console_errors[3].type == "exception" &&
+      res.console_errors[3].text == "Uncaught (in promise) Error: no answer"
+    echo: "{{res.console_errors}}"
+
+  - name: A page without errors has none
+    uses: browser
+    with:
+      headless: true
+      timeout: 1m
+      actions:
+      - name: navigate
+        url: "{{vars.url}}/state.html"
+      - name: wait_text
+        selector: "#server"
+        equals: "server: nobody"
+    test: res.code == 0 && len(res.console_errors) == 0
