@@ -20,6 +20,11 @@ jobs:
       actions:
       - name: navigate
         url: "{{vars.url}}/state.html"
+      # The page asks the server whom it is when it loads; that answer comes
+      # first, so that it cannot land after the one the sign-in brings.
+      - name: wait_text
+        selector: "#server"
+        equals: "server: nobody"
       - name: click
         selector: "#sign-in"
       - name: wait_text
