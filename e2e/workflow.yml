@@ -73,6 +73,16 @@ jobs:
     test: res.code == 0
     echo: "{{res.stdout}}"
 
+  - name: console.yml
+    uses: shell
+    with:
+      cmd: probe e2e/console.yml
+      timeout: 2m
+      env:
+        DISPLAY: ":99"
+    test: res.code == 0
+    echo: "{{res.stdout}}"
+
   - name: A failed browser action saves the page
     uses: shell
     with:
@@ -132,3 +142,20 @@ jobs:
       res.stdout contains 'select "#size": the option "xxl" is disabled' &&
       res.stdout contains 'select "#color": the <select> is disabled' &&
       res.stdout contains 'select "h1": the element is a <h1>, not a <select>'
+
+  - name: A failure names the errors the page wrote
+    uses: shell
+    with:
+      cmd: |
+        dir=$(mktemp -d)
+        EVIDENCE_DIR="$dir" probe e2e/console-failure.yml
+        echo "exit=$?"
+        rm -rf "$dir"
+      timeout: 1m
+      env:
+        DISPLAY: ":99"
+    test: |
+      res.stdout contains "exit=3" &&
+      res.stdout contains 'console errors: "boot: config failed (http://localhost:8090/console.html:' &&
+      res.stdout contains '"Uncaught TypeError: Cannot read properties of null' &&
+      res.stdout contains "page at failure: url http://localhost:8090/console.html"

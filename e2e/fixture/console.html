@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Probe Browser Console Fixture</title>
+</head>
+<body>
+  <h1>Console</h1>
+  <button id="throw" type="button">Throw</button>
+  <button id="reject" type="button">Reject</button>
+  <p id="done"></p>
+  <!-- The browser's own error for this image is not one of the page's. -->
+  <img src="/missing.png" alt="">
+  <script>
+    // The page writes each kind of error it can, and messages that are not
+    // errors, so that the result can be checked to hold the errors only.
+    console.log("booting");
+    console.warn("a warning is not an error");
+    console.error("boot: %s failed", "config");
+    console.assert(1 === 2, "one is not two");
+    document.getElementById("throw").addEventListener("click", () => {
+      null.go();
+    });
+    document.getElementById("reject").addEventListener("click", () => {
+      Promise.reject(new Error("no answer"));
+      setTimeout(() => {
+        document.getElementById("done").textContent = "done";
+      }, 100);
+    });
+  </script>
+</body>
+</html>
