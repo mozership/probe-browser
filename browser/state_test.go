@@ -110,6 +110,14 @@ func TestWriteStorageState_OnlyTheUserReadsIt(t *testing.T) {
 	})
 }
 
+func TestSetLocalStorage_NothingToKeep(t *testing.T) {
+	// An origin without items opens no page, so no target is needed.
+	origins := []stateOrigin{{Origin: "http://localhost:8090", LocalStorage: []stateItem{}}}
+	if err := setLocalStorage(t.Context(), nil, origins); err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
 func TestReadStorageState_Refused(t *testing.T) {
 	dir := t.TempDir()
 	bad := filepath.Join(dir, "bad.json")

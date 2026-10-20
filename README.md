@@ -285,7 +285,7 @@ A step that signs in can save the login with `save_storage_state`, and the steps
 
 The file holds the cookies of every site the browser has, `HttpOnly` ones included, and the localStorage of the origin of the page open when it is saved; to keep the localStorage of another origin, save the state while a page of it is open. It has the shape of [Playwright's storage state](https://playwright.dev/docs/auth), so that either tool reads what the other writes.
 
-Before the first action, a browser given `storage_state` takes its cookies, and opens a page of each origin in it to write the localStorage there. Those pages are answered with an empty one inside the browser, so they reach no server and run none of the app's scripts, and the browser is back on `about:blank` when the first action runs. A file that is missing or is not a storage state fails the step before the browser starts, as when the step that writes it failed.
+Before the first action, a browser given `storage_state` takes its cookies, and opens a page of each origin with items in it to write the localStorage there. Those pages are answered with an empty one inside the browser, so they reach no server and run none of the app's scripts, and the browser is back on `about:blank` when the first action runs. A file that is missing or is not a storage state fails the step before the browser starts, as when the step that writes it failed.
 
 The cookies sign in as the user, so the file is readable only by the user who ran Probe. Without `path` it goes to the temporary directory, which keeps it out of the repository; with `path`, keep it out of version control, and out of the files a CI run uploads.
 

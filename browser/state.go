@@ -101,7 +101,15 @@ func loadStorageState(s *storageState) chromedp.Action[chromedp.Void] {
 // than sent, so that the app is not asked for a page and runs no script,
 // and the browser is left on about:blank, as it starts.
 func setLocalStorage(ctx context.Context, t *chromedp.Target, origins []stateOrigin) error {
-	if len(origins) == 0 {
+	// An origin with nothing to keep, as of a login kept in cookies only,
+	// needs no page opened.
+	var filled []stateOrigin
+	for _, o := range origins {
+		if len(o.LocalStorage) > 0 {
+			filled = append(filled, o)
+		}
+	}
+	if len(filled) == 0 {
 		return nil
 	}
 
@@ -133,7 +141,7 @@ func setLocalStorage(ctx context.Context, t *chromedp.Target, origins []stateOri
 		return err
 	}
 
-	for _, o := range origins {
+	for _, o := range filled {
 		items, err := json.Marshal(o.LocalStorage)
 		if err != nil {
 			_ = stop()
@@ -201,7 +209,7 @@ func saveStorageState(dst *storageState) chromedp.Action[chromedp.Void] {
 				SameSite: c.SameSite.String(),
 			}
 		}
-		if origin.Origin != "" {
+		if origin.Origin != "" && len(origin.LocalStorage) > 0 {
 			s.Origins = append(s.Origins, origin)
 		}
 		*dst = s
@@ -237,10 +245,19 @@ func writeStorageState(s *storageState, path string) (string, error) {
 			return "", err
 		}
 	}
-	// WriteFile keeps the mode of a file that is there already, so the mode
-	// is set apart for one an earlier run wrote with another.
-	if err := os.WriteFile(path, data, 0o600); err != nil {
+	// OpenFile keeps the mode of a file that is there already, so the mode
+	// of one an earlier run wrote with another is set before it is written.
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
+	if err != nil {
 		return "", err
 	}
-	return path, os.Chmod(path, 0o600)
+	if err := f.Chmod(0o600); err != nil {
+		_ = f.Close()
+		return "", err
+	}
+	_, err = f.Write(data)
+	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
+	return path, err
 }
