@@ -357,7 +357,7 @@ The package `github.com/mozership/probe-browser/browser` is the action itself, f
 
 ## Testing
 
-`go test ./...` runs the action against a mock in place of Chrome. `e2e/workflow.yml` serves a fixture page and runs the action through Probe in a real Chrome:
+`go test ./...` runs the action against a mock in place of Chrome. `e2e/workflow.yml` builds and starts the fixture server in `e2e/server`, which serves the pages in `e2e/fixture`, and runs the action through Probe against them in a real Chrome:
 
 ```sh
 go build -o e2e/action/probe-browser . && probe e2e/workflow.yml

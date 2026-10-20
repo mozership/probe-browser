@@ -15,12 +15,20 @@ vars:
 jobs:
 - name: Browser
   steps:
-  # -u makes Python write the line at once rather than when its buffer fills.
+  # The server is built apart and its binary run, rather than through go run,
+  # so that the process stopped at the end is the server itself.
+  - name: Build the fixture page server
+    uses: shell
+    with:
+      cmd: go build -o e2e/server/server ./e2e/server
+      timeout: 2m
+    test: res.code == 0
+
   - name: Start the fixture page server
     uses: shell
     with:
       background: true
-      cmd: python3 -u -m http.server 8090 --bind 127.0.0.1 --directory e2e/fixture
+      cmd: e2e/server/server
       ready:
         log: Serving HTTP
       timeout: 10s

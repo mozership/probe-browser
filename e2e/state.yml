@@ -3,7 +3,7 @@ description: |
   Signs in on the fixture page in one step, and starts the next step's
   browser signed in from the state the first one saved.
   Serve the fixture page first, as e2e/workflow.yml does:
-  python3 -u -m http.server 8090 --bind 127.0.0.1 --directory e2e/fixture
+  go run ./e2e/server
 actions:
   browser: ./action
 vars:
@@ -20,11 +20,16 @@ jobs:
       actions:
       - name: navigate
         url: "{{vars.url}}/state.html"
+      # The page asks the server whom it is when it loads; that answer comes
+      # first, so that it cannot land after the one the sign-in brings.
+      - name: wait_text
+        selector: "#server"
+        equals: "server: nobody"
       - name: click
         selector: "#sign-in"
       - name: wait_text
-        selector: "#token"
-        equals: "token: t-42"
+        selector: "#server"
+        equals: "server: s-7"
       - name: save_storage_state
         id: state
     test: res.code == 0 && res.filepaths.state endsWith ".json"
@@ -48,6 +53,10 @@ jobs:
         id: token
         selector: "#token"
         equals: "token: t-42"
+      - name: wait_text
+        id: server
+        selector: "#server"
+        equals: "server: s-7"
     test: res.code == 0
 
   - name: Without it a new browser is signed out
@@ -62,4 +71,8 @@ jobs:
         id: token
         selector: "#token"
         equals: "token: none"
+      - name: wait_text
+        id: server
+        selector: "#server"
+        equals: "server: nobody"
     test: res.code == 0

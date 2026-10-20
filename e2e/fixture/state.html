@@ -9,18 +9,24 @@
   <button id="sign-in" type="button">Sign in</button>
   <p id="cookie"></p>
   <p id="token"></p>
+  <p id="server"></p>
   <script>
-    // Signing in keeps a session in a cookie and a token in localStorage, as
-    // an app does, and the page shows both, so a later browser can tell
-    // whether it started with them.
-    const show = () => {
+    // Signing in keeps a session in a cookie, a token in localStorage, and
+    // an HttpOnly cookie the server sets, as an app does, and the page shows
+    // all three, so a later browser can tell whether it started with them.
+    // The HttpOnly cookie is out of reach of the page, so the server says
+    // whom the request came from.
+    const show = async () => {
       document.getElementById("cookie").textContent = "cookie: " + document.cookie;
       document.getElementById("token").textContent = "token: " + (localStorage.getItem("token") ?? "none");
+      const who = await (await fetch("/whoami")).text();
+      document.getElementById("server").textContent = "server: " + who;
     };
-    document.getElementById("sign-in").addEventListener("click", () => {
+    document.getElementById("sign-in").addEventListener("click", async () => {
+      await fetch("/sign-in", { method: "POST" });
       document.cookie = "session=abc123; path=/; max-age=3600";
       localStorage.setItem("token", "t-42");
-      show();
+      await show();
     });
     show();
   </script>
