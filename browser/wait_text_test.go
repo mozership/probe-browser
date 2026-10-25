@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/linyows/probe/mapping"
+	"github.com/mozership/probe/actionrpc"
 )
 
 func TestTextMatch(t *testing.T) {
@@ -188,7 +188,7 @@ func TestParseData_EmptyTextFields(t *testing.T) {
 
 func TestWaitTextActionMapping(t *testing.T) {
 	action := NewChromeDPAction()
-	err := mapping.MapToStructByTags(map[string]any{
+	err := actionrpc.DecodeParams(map[string]any{
 		"name":     "wait_text",
 		"selector": "#status",
 		"equals":   "Ready",

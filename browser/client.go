@@ -6,15 +6,13 @@ import (
 	"fmt"
 	"iter"
 	"maps"
-	"net/http"
 	"os"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/chromedp/chromedp"
-	"github.com/linyows/probe/binary"
-	"github.com/linyows/probe/mapping"
+	"github.com/mozership/probe/actionrpc"
 )
 
 const (
@@ -225,7 +223,7 @@ func (req *Req) parseData(data map[string]any, opts []Option) error {
 	}
 
 	// Use MapToStructByTags to parse all fields including actions
-	err := mapping.MapToStructByTags(attributesAsLists(data), req)
+	err := actionrpc.DecodeParams(attributesAsLists(data), req)
 	if err != nil {
 		return fmt.Errorf("MapToStructByTags failed: %w", err)
 	}
@@ -235,7 +233,7 @@ func (req *Req) parseData(data map[string]any, opts []Option) error {
 	// accept only a duration string and silently keep the default for
 	// anything else, so a step given a number ran with 5 seconds.
 	if timeout, exists := data["timeout"]; exists {
-		parsed, err := mapping.ParseTimeout(timeout)
+		parsed, err := actionrpc.ParseTimeout(timeout)
 		if err != nil {
 			return err
 		}
@@ -502,10 +500,9 @@ func (req *Req) collectResults() (map[string]string, map[string]string, error) {
 			filePaths[key] = path
 		case "full_screenshot", "capture_screenshot", "screenshot":
 			if action.reBuf != nil && len(*action.reBuf) > 0 {
-				// Save screenshot to temporary file using our binary utility.
-				// full_screenshot is JPEG below quality 100, so the type, and
-				// with it the extension, comes from the bytes.
-				filePath, err := binary.SaveBinaryToTempFile(*action.reBuf, http.DetectContentType(*action.reBuf))
+				// Save the screenshot to a temporary file, named for its format:
+				// full_screenshot is JPEG below quality 100.
+				filePath, err := saveScreenshot(*action.reBuf)
 				if err != nil {
 					return nil, nil, fmt.Errorf("failed to save screenshot: %w", err)
 				}
@@ -685,7 +682,7 @@ func Request(data map[string]any, opts ...Option) (map[string]any, error) {
 		return createErrorResult(start, req, err)
 	}
 
-	mapRet, err := mapping.StructToMapByTags(result)
+	mapRet, err := actionrpc.EncodeResult(result)
 	if err != nil {
 		return createErrorResult(start, req, err)
 	}
@@ -706,7 +703,7 @@ func createErrorResult(start time.Time, req *Req, err error) (map[string]any, er
 		Status: 1, // failure
 	}
 
-	mapResult, mapErr := mapping.StructToMapByTags(result)
+	mapResult, mapErr := actionrpc.EncodeResult(result)
 	if mapErr != nil {
 		return map[string]any{}, mapErr
 	}
