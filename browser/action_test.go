@@ -6,7 +6,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/linyows/probe/actionref"
+	"github.com/mozership/probe/actionref"
 )
 
 // TestManifestsDeclare checks that action.yml, and the one the e2e workflows

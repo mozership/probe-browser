@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/chromedp/chromedp"
-	"github.com/linyows/probe/mapping"
+	"github.com/mozership/probe/actionrpc"
 )
 
 func TestNewChromeDPAction(t *testing.T) {
@@ -290,7 +290,7 @@ func TestChromeDPAction_Mapping(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			action := NewChromeDPAction()
-			err := mapping.MapToStructByTags(tc.input, action)
+			err := actionrpc.DecodeParams(tc.input, action)
 
 			if err != nil {
 				t.Errorf("MapToStructByTags failed: %v", err)
@@ -311,7 +311,7 @@ func TestGetAttributeActionMapping(t *testing.T) {
 		"attribute": []string{"href"},
 	}
 
-	err := mapping.MapToStructByTags(testData, action)
+	err := actionrpc.DecodeParams(testData, action)
 	if err != nil {
 		t.Errorf("MapToStructByTags failed: %v", err)
 	}
@@ -337,7 +337,7 @@ func TestSelectActionMapping(t *testing.T) {
 		"value":    "option2",
 	}
 
-	err := mapping.MapToStructByTags(testData, action)
+	err := actionrpc.DecodeParams(testData, action)
 	if err != nil {
 		t.Errorf("MapToStructByTags failed: %v", err)
 	}
@@ -359,7 +359,7 @@ func TestGetHtmlActionMapping(t *testing.T) {
 		"selector": ".content",
 	}
 
-	err := mapping.MapToStructByTags(testData, action)
+	err := actionrpc.DecodeParams(testData, action)
 	if err != nil {
 		t.Errorf("MapToStructByTags failed: %v", err)
 	}
@@ -396,7 +396,7 @@ func TestMouseActionMapping(t *testing.T) {
 				"selector": tc.selector,
 			}
 
-			err := mapping.MapToStructByTags(testData, action)
+			err := actionrpc.DecodeParams(testData, action)
 			if err != nil {
 				t.Errorf("MapToStructByTags failed: %v", err)
 			}
