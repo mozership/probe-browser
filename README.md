@@ -46,6 +46,7 @@ These go directly under `with`.
 | `window_h` | Integer | `1080` | Window height in pixels |
 | `evidence_dir` | String | the temporary directory | Where the page is saved when the actions fail. See [Page at failure](#page-at-failure) |
 | `storage_state` | String | none | A file `save_storage_state` wrote, whose cookies and localStorage the browser starts with. See [Carrying a login over](#carrying-a-login-over) |
+| `virtual_authenticator` | Boolean or map | none | Answer WebAuthn with a virtual authenticator, so that a passkey can be registered and used without a user. See [Signing in with a passkey](#signing-in-with-a-passkey) |
 
 Starting Chrome takes part of `timeout`, often a second or more, so a short limit can run out before the first page opens.
 
@@ -289,6 +290,54 @@ The file holds the cookies of every site the browser has, `HttpOnly` ones includ
 Before the first action, a browser given `storage_state` takes its cookies, and opens a page of each origin with items in it to write the localStorage there. Those pages are answered with an empty one inside the browser, so they reach no server and run none of the app's scripts, and the browser is back on `about:blank` when the first action runs. A file that is missing or is not a storage state fails the step before the browser starts, as when the step that writes it failed.
 
 The cookies sign in as the user, so the file is readable only by the user who ran Probe. Without `path` it goes to the temporary directory, which keeps it out of the repository; with `path`, keep it out of version control, and out of the files a CI run uploads.
+
+### Signing in with a passkey
+
+With `virtual_authenticator`, the browser answers WebAuthn with a virtual authenticator in place of the platform's, such as Touch ID or a security key, so that a page can register a passkey and sign in with it while no one is there to touch a sensor. `true` gives one that holds passkeys and passes user verification:
+
+```yaml
+  - name: Register a passkey and sign in with it
+    uses: browser
+    with:
+      timeout: 30s
+      virtual_authenticator: true
+      actions:
+        - name: navigate
+          url: "{{vars.url}}/account/passkeys"
+        - name: click
+          selector: "#add-passkey"
+        - name: wait_visible
+          selector: ".passkey-added"
+        - name: navigate
+          url: "{{vars.url}}/logout"
+        - name: navigate
+          url: "{{vars.url}}/login"
+        - name: click
+          selector: "#sign-in-with-passkey"
+        - name: wait_visible
+          selector: "#dashboard"
+    test: res.code == 0
+```
+
+A map in its place changes the options it names, and keeps the others:
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `transport` | `internal` | How the authenticator says it is reached: `internal` for one built into the device, or `usb`, `nfc`, `ble` or `hybrid` |
+| `resident_key` | `true` | Whether it can keep a discoverable credential, which a passkey is |
+| `user_verification` | `true` | Whether it can verify the user, as by a fingerprint or a PIN |
+| `user_verified` | as `user_verification` | Whether verifying the user succeeds. `false` tests how the page takes a refusal |
+| `backup_eligible` | `false` | Whether its credentials say they can be backed up, as those of a password manager do |
+| `backed_up` | `false` | Whether its credentials say they are backed up. It needs `backup_eligible` |
+
+```yaml
+      virtual_authenticator:
+        user_verified: false
+```
+
+An option it does not know, or a value it cannot take, fails the step before the browser starts.
+
+The authenticator speaks CTAP2 and answers at once, as a user who touches it would. It belongs to the page's tab, so a popup the page opens has none. WebAuthn works only in a secure context, so the page has to be on `https` or on `localhost`. Like the rest of the browser, the authenticator and the passkeys it holds end with the step, so the passkey is registered and used in one step.
 
 ### Checking the console
 

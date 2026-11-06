@@ -175,10 +175,15 @@ type Req struct {
 	// StorageState names a file save_storage_state wrote, whose cookies and
 	// localStorage the browser starts with, so that a login carries over
 	// from an earlier step.
-	StorageState  string `map:"storage_state"`
-	Timeout       time.Duration
-	cb            *Callback
-	browserRunner BrowserRunner
+	StorageState string `map:"storage_state"`
+	// VirtualAuthenticator is the virtual authenticator the page's tab
+	// answers WebAuthn with, so that a passkey can be registered and used
+	// without a user. Nil means the platform's own, as without it. It has
+	// no map tag, as parseData reads it: it takes true as well as a map.
+	VirtualAuthenticator *authenticatorOptions
+	Timeout              time.Duration
+	cb                   *Callback
+	browserRunner        BrowserRunner
 	// capture takes the page as it is when the actions fail. Nil means
 	// capturing it through browserRunner; tests replace it.
 	capture func(ctx context.Context) (screenshot []byte, html, url string, err error)
@@ -238,6 +243,14 @@ func (req *Req) parseData(data map[string]any, opts []Option) error {
 			return err
 		}
 		req.Timeout = parsed
+	}
+
+	if v, exists := data["virtual_authenticator"]; exists {
+		opts, err := parseVirtualAuthenticator(v)
+		if err != nil {
+			return err
+		}
+		req.VirtualAuthenticator = opts
 	}
 
 	return nil
@@ -345,6 +358,11 @@ func store[T any](a chromedp.Action[T], dst *T) chromedp.Action[chromedp.Void] {
 
 func (req *Req) buildActionTasks() ([]chromedp.Action[chromedp.Void], error) {
 	tasks := []chromedp.Action[chromedp.Void]{}
+
+	// The authenticator comes first, so that it is there for every page.
+	if req.VirtualAuthenticator != nil {
+		tasks = append(tasks, addVirtualAuthenticator(req.VirtualAuthenticator))
+	}
 
 	if req.StorageState != "" {
 		s, err := readStorageState(req.StorageState)
