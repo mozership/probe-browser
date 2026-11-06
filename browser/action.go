@@ -39,7 +39,7 @@ func Serve() {
 }
 
 // Params returns the keys the browser action takes in with: those of Req,
-// and timeout, which it reads apart from Req.
+// and timeout and virtual_authenticator, which it reads apart from Req.
 func Params() []string {
-	return append(actionrpc.ParamNames(Req{}), "timeout")
+	return append(actionrpc.ParamNames(Req{}), "timeout", "virtual_authenticator")
 }

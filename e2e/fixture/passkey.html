@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Probe Browser Passkey Fixture</title>
+</head>
+<body>
+  <h1>Passkey</h1>
+  <button id="register" type="button">Register a passkey</button>
+  <button id="sign-in" type="button">Sign in with a passkey</button>
+  <p id="registered"></p>
+  <p id="signed-in"></p>
+  <script>
+    // The page registers a passkey and signs in with it, as an app does, and
+    // shows what the authenticator answered: the flags of its authenticator
+    // data, and the user the passkey is for. It checks nothing a server
+    // would, as it tests the authenticator rather than a relying party.
+    const flags = (authData) => {
+      const f = new Uint8Array(authData)[32];
+      return [[0x01, "UP"], [0x04, "UV"], [0x08, "BE"], [0x10, "BS"]]
+        .filter(([bit]) => f & bit).map(([, name]) => name).join(" ");
+    };
+    const challenge = () => crypto.getRandomValues(new Uint8Array(32));
+    const show = (id, f) => async () => {
+      const el = document.getElementById(id);
+      try {
+        el.textContent = await f();
+      } catch (e) {
+        el.textContent = "error: " + e.name;
+      }
+    };
+
+    document.getElementById("register").addEventListener("click", show("registered", async () => {
+      const cred = await navigator.credentials.create({ publicKey: {
+        rp: { id: location.hostname, name: "Probe" },
+        user: { id: new TextEncoder().encode("user-7"), name: "user-7", displayName: "User 7" },
+        challenge: challenge(),
+        pubKeyCredParams: [{ type: "public-key", alg: -7 }],
+        authenticatorSelection: { residentKey: "required", userVerification: "required" },
+      } });
+      return "registered: " + flags(cred.response.getAuthenticatorData());
+    }));
+
+    // No allowCredentials, so only a discoverable credential, a passkey,
+    // can answer.
+    document.getElementById("sign-in").addEventListener("click", show("signed-in", async () => {
+      const cred = await navigator.credentials.get({ publicKey: {
+        rpId: location.hostname,
+        challenge: challenge(),
+        userVerification: "required",
+      } });
+      const user = new TextDecoder().decode(cred.response.userHandle);
+      return "signed in as " + user + ": " + flags(cred.response.authenticatorData);
+    }));
+  </script>
+</body>
+</html>

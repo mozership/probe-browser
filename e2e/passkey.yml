@@ -1,0 +1,74 @@
+name: Browser Passkey
+description: |
+  Registers a passkey on the fixture page with a virtual authenticator, and
+  signs in with it, in one step, as the authenticator lives as long as the
+  step's browser. WebAuthn needs a secure context, so the page is opened on
+  localhost rather than 127.0.0.1.
+  Serve the fixture page first, as e2e/workflow.yml does:
+  go run ./e2e/server
+actions:
+  browser: ./action
+vars:
+  url: "{{ URL ?? 'http://localhost:8090' }}"
+jobs:
+- name: Passkey
+  steps:
+  - name: Register a passkey and sign in with it
+    uses: browser
+    with:
+      headless: true
+      timeout: 1m
+      virtual_authenticator: true
+      actions:
+      - name: navigate
+        url: "{{vars.url}}/passkey.html"
+      - name: click
+        selector: "#register"
+      - name: wait_text
+        id: registered
+        selector: "#registered"
+        equals: "registered: UP UV"
+      - name: click
+        selector: "#sign-in"
+      - name: wait_text
+        id: signed_in
+        selector: "#signed-in"
+        equals: "signed in as user-7: UP UV"
+    test: res.code == 0
+
+  - name: The options reach the authenticator
+    uses: browser
+    with:
+      headless: true
+      timeout: 1m
+      virtual_authenticator:
+        backup_eligible: true
+        backed_up: true
+      actions:
+      - name: navigate
+        url: "{{vars.url}}/passkey.html"
+      - name: click
+        selector: "#register"
+      - name: wait_text
+        id: registered
+        selector: "#registered"
+        equals: "registered: UP UV BE BS"
+    test: res.code == 0
+
+  - name: An authenticator that fails user verification refuses
+    uses: browser
+    with:
+      headless: true
+      timeout: 1m
+      virtual_authenticator:
+        user_verified: false
+      actions:
+      - name: navigate
+        url: "{{vars.url}}/passkey.html"
+      - name: click
+        selector: "#register"
+      - name: wait_text
+        id: registered
+        selector: "#registered"
+        equals: "error: NotAllowedError"
+    test: res.code == 0
