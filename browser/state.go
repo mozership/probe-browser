@@ -222,14 +222,22 @@ func saveStorageState(dst *storageState) chromedp.Action[chromedp.Void] {
 // the session cookies, which sign in as the user, so only the user who ran
 // Probe can read it.
 func writeStorageState(s *storageState, path string) (string, error) {
-	data, err := json.MarshalIndent(s, "", "  ")
+	return writePrivateJSON(s, path, "probe-browser-state-*.json")
+}
+
+// writePrivateJSON writes v as indented JSON to path, or to a new file in
+// the temporary directory named after pattern when path is empty, and
+// returns where it went. Only the user who ran Probe can read the file, as
+// what is written signs in as the user.
+func writePrivateJSON(v any, path, pattern string) (string, error) {
+	data, err := json.MarshalIndent(v, "", "  ")
 	if err != nil {
 		return "", err
 	}
 	data = append(data, '\n')
 
 	if path == "" {
-		f, err := os.CreateTemp("", "probe-browser-state-*.json")
+		f, err := os.CreateTemp("", pattern)
 		if err != nil {
 			return "", err
 		}

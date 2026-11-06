@@ -156,17 +156,25 @@ func (o *authenticatorOptions) cdpOptions() *webauthn.VirtualAuthenticatorOption
 
 // addVirtualAuthenticator returns an action that has the page's tab answer
 // WebAuthn with a virtual authenticator of o in place of the platform's,
-// before any page is opened. It belongs to the tab, so a popup the page
-// opens has none.
-func addVirtualAuthenticator(o *authenticatorOptions) chromedp.Action[chromedp.Void] {
+// before any page is opened, holding the credentials of creds. It belongs to
+// the tab, so a popup the page opens has none. It keeps the authenticator's
+// ID in id, for save_passkeys to read its credentials by.
+func addVirtualAuthenticator(o *authenticatorOptions, creds []*webauthn.Credential, id *webauthn.AuthenticatorID) chromedp.Action[chromedp.Void] {
 	return func(ctx context.Context, t *chromedp.Target) (chromedp.Void, error) {
 		// The browser's own WebAuthn dialogs would wait for a user.
 		enableUI := false
 		if _, err := cdp.Call(ctx, t, webauthn.Enable, webauthn.EnableParams{EnableUI: &enableUI}); err != nil {
 			return chromedp.Void{}, fmt.Errorf("virtual_authenticator: enabling WebAuthn: %w", err)
 		}
-		if _, err := cdp.Call(ctx, t, webauthn.AddVirtualAuthenticator, webauthn.AddVirtualAuthenticatorParams{Options: o.cdpOptions()}); err != nil {
+		res, err := cdp.Call(ctx, t, webauthn.AddVirtualAuthenticator, webauthn.AddVirtualAuthenticatorParams{Options: o.cdpOptions()})
+		if err != nil {
 			return chromedp.Void{}, fmt.Errorf("virtual_authenticator: adding the authenticator: %w", err)
+		}
+		*id = res.AuthenticatorID
+		for i, c := range creds {
+			if _, err := cdp.Call(ctx, t, addCredential, newAddCredentialParams(*id, c)); err != nil {
+				return chromedp.Void{}, fmt.Errorf("passkeys: adding passkey %d for %s: %w", i, c.RpID, err)
+			}
 		}
 		return chromedp.Void{}, nil
 	}
