@@ -7,6 +7,8 @@ import (
 	"iter"
 	"maps"
 	"os"
+	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -383,9 +385,12 @@ func (req *Req) buildActionTasks() ([]chromedp.Action[chromedp.Void], error) {
 			authenticator = defaultAuthenticatorOptions()
 		}
 	}
-	var authenticatorID webauthn.AuthenticatorID
+	va := &virtualAuthenticator{}
+	if slices.ContainsFunc(req.Actions, func(a *ChromeDPAction) bool { return a.Name == "wait_passkey" }) {
+		va.events = make(chan string, passkeyEventBuffer)
+	}
 	if authenticator != nil {
-		tasks = append(tasks, addVirtualAuthenticator(authenticator, creds, &authenticatorID))
+		tasks = append(tasks, addVirtualAuthenticator(authenticator, creds, va))
 	}
 
 	if req.StorageState != "" {
@@ -510,8 +515,27 @@ func (req *Req) buildActionTasks() ([]chromedp.Action[chromedp.Void], error) {
 				return nil, fmt.Errorf("save_passkeys needs virtual_authenticator or passkeys, as the passkeys it saves are those of the virtual authenticator")
 			}
 			var f passkeyFile
-			tasks = append(tasks, savePasskeys(&authenticatorID, &f))
+			tasks = append(tasks, savePasskeys(&va.id, &f))
 			action.rePasskeys = &f
+		case "wait_passkey":
+			if authenticator == nil {
+				return nil, fmt.Errorf("wait_passkey needs virtual_authenticator or passkeys, as it waits for the virtual authenticator")
+			}
+			var kind string
+			tasks = append(tasks, waitPasskey(va, &kind))
+			action.reText = &kind
+		case "set_user_verified":
+			if authenticator == nil {
+				return nil, fmt.Errorf("set_user_verified needs virtual_authenticator or passkeys, as it sets the virtual authenticator")
+			}
+			if !authenticator.UserVerification {
+				return nil, fmt.Errorf("set_user_verified needs user_verification, as an authenticator without it verifies no user")
+			}
+			verified, err := strconv.ParseBool(action.Value)
+			if err != nil {
+				return nil, fmt.Errorf("set_user_verified takes value true or false, not %q", action.Value)
+			}
+			tasks = append(tasks, setUserVerified(va, verified))
 		default:
 			return nil, fmt.Errorf("unsupported action type: %s", action.Name)
 		}
@@ -526,7 +550,7 @@ func (req *Req) collectResults() (map[string]string, map[string]string, error) {
 
 	for _, action := range req.Actions {
 		switch action.Name {
-		case "text", "value", "get_attribute", "wait_text", "get_html":
+		case "text", "value", "get_attribute", "wait_text", "get_html", "wait_passkey":
 			key := action.Name
 			if action.ID != "" {
 				key = action.ID

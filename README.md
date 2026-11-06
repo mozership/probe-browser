@@ -61,7 +61,7 @@ Each entry of `actions` names its action in `name` and takes these fields:
 | `id` | actions that return something | The key for the result in `res.results` or `res.filepaths`. Without it the action's name is the key, so a later action of the same kind replaces the earlier result |
 | `url` | `navigate` | The address to open |
 | `selector` | actions on an element | A CSS selector |
-| `value` | `type`, `send_keys`, `select` | The text to use |
+| `value` | `type`, `send_keys`, `select`, `set_user_verified` | The text to use. Of `set_user_verified`, `true` or `false` |
 | `attribute` | `get_attribute` | The attribute to read, as `href` or `[href]`. Of a list, only the first entry is read |
 | `quality` | `full_screenshot` | `1` to `99` saves JPEG at that quality. Anything else, including unset, `0`, `100` and above, or a negative number, saves PNG |
 | `path` | screenshots, `save_storage_state`, `save_passkeys` | Of a screenshot, deprecated: also write the image to this path; use `res.filepaths` instead. Of `save_storage_state` and `save_passkeys`, where to write the file, in place of a new one in the temporary directory |
@@ -128,6 +128,15 @@ These save an image file and put its path in `res.filepaths`, under `id` or the 
 | Action | What it does |
 |--------|--------------|
 | `save_storage_state` | Writes the cookies of the browser and the localStorage of the page open into a JSON file, and puts its path in `res.filepaths`, under `id` or the action's name. The file goes to `path`, or to a new `probe-browser-state-*.json` in the temporary directory. See [Carrying a login over](#carrying-a-login-over) |
+
+### Passkeys
+
+These use the virtual authenticator, so they need `virtual_authenticator` or `passkeys`. See [Signing in with a passkey](#signing-in-with-a-passkey).
+
+| Action | What it does |
+|--------|--------------|
+| `wait_passkey` | Waits until the virtual authenticator registers a passkey or signs in with one, and puts which it did, `registration` or `authentication`, in `res.results`, under `id` or the action's name. See [Waiting for a passkey](#waiting-for-a-passkey) |
+| `set_user_verified` | Has user verification succeed, with `value: true`, or fail, with `value: false`, from then on. It needs an authenticator with `user_verification` |
 | `save_passkeys` | Writes the passkeys the virtual authenticator holds, private keys included, into a JSON file, and puts its path in `res.filepaths`, under `id` or the action's name. The file goes to `path`, or to a new `probe-browser-passkeys-*.json` in the temporary directory. It needs `virtual_authenticator` or `passkeys`, and fails when the authenticator holds none. See [Carrying a passkey over](#carrying-a-passkey-over) |
 
 ## Response Object
@@ -339,7 +348,43 @@ A map in its place changes the options it names, and keeps the others:
 
 An option it does not know, or a value it cannot take, fails the step before the browser starts.
 
-The authenticator speaks CTAP2 and answers at once, as a user who touches it would. It belongs to the page's tab, so a popup the page opens has none. WebAuthn works only in a secure context, so the page has to be on `https` or on `localhost`. Like the rest of the browser, the authenticator and the passkeys it holds end with the step. To sign in with a passkey in a later step, save it as the next section shows.
+The authenticator speaks CTAP2 and answers at once, as a user who touches it would. It belongs to the page's tab, so a popup the page opens has none. WebAuthn works only in a secure context, so the page has to be on `https` or on `localhost`. Like the rest of the browser, the authenticator and the passkeys it holds end with the step. To sign in with a passkey in a later step, save it as [Carrying a passkey over](#carrying-a-passkey-over) shows.
+
+#### Waiting for a passkey
+
+A page that registers a passkey can take a moment to say so, as it sends the new credential to its server first. `wait_passkey` waits for the authenticator itself, and says what it did:
+
+```yaml
+      actions:
+        - name: navigate
+          url: "{{vars.url}}/account/passkeys"
+        - name: click
+          selector: "#add-passkey"
+        - name: wait_passkey
+          id: added
+        - name: save_passkeys
+    test: res.code == 0 && res.results.added == "registration"
+```
+
+What the authenticator does is kept from the start of the step, and each `wait_passkey` takes the earliest one that no `wait_passkey` before it took, so a registration that ends before its `wait_passkey` starts is not missed. The passkeys `passkeys` gives are not registrations. When the step's `timeout` runs out first, the step fails.
+
+#### Failing user verification
+
+`set_user_verified` changes, from then on, whether the authenticator verifies the user, as when a fingerprint stops matching, so that one step can register a passkey and then see how the page takes a sign-in whose verification fails:
+
+```yaml
+      virtual_authenticator: true
+      actions:
+        # ... register a passkey ...
+        - name: set_user_verified
+          value: false
+        - name: click
+          selector: "#sign-in-with-passkey"
+        - name: wait_visible
+          selector: ".passkey-error"
+```
+
+To fail it from the start, give `virtual_authenticator` `user_verified: false` instead.
 
 ### Carrying a passkey over
 
