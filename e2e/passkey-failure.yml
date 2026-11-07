@@ -1,0 +1,43 @@
+name: Browser Passkey Failure
+description: |
+  Saves the passkeys before the page has registered one, which fails the
+  step, as a later step would have none to sign in with, and waits for a
+  passkey the page never registers.
+  This workflow is expected to fail with an action error.
+  Serve the fixture page first, as e2e/workflow.yml does:
+  go run ./e2e/server
+actions:
+  browser: ./action
+vars:
+  url: "{{ URL ?? 'http://localhost:8090' }}"
+  evidence_dir: "{{ EVIDENCE_DIR ?? '/tmp/probe-browser-evidence' }}"
+jobs:
+- name: Passkey failure
+  steps:
+  - name: Save before registering
+    uses: browser
+    with:
+      headless: true
+      timeout: 30s
+      evidence_dir: "{{vars.evidence_dir}}"
+      virtual_authenticator: true
+      actions:
+      - name: navigate
+        url: "{{vars.url}}/passkey.html"
+      - name: save_passkeys
+    test: res.code == 0
+
+- name: Passkey that never comes
+  steps:
+  - name: Wait for a registration that never comes
+    uses: browser
+    with:
+      headless: true
+      timeout: 5s
+      evidence_dir: "{{vars.evidence_dir}}"
+      virtual_authenticator: true
+      actions:
+      - name: navigate
+        url: "{{vars.url}}/passkey.html"
+      - name: wait_passkey
+    test: res.code == 0

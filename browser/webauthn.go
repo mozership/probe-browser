@@ -3,6 +3,7 @@ package browser
 import (
 	"context"
 	"fmt"
+	"iter"
 	"slices"
 	"strconv"
 	"strings"
@@ -154,19 +155,98 @@ func (o *authenticatorOptions) cdpOptions() *webauthn.VirtualAuthenticatorOption
 	}
 }
 
+// virtualAuthenticator is the virtual authenticator of a step, as the
+// actions that use it see it once it is added.
+type virtualAuthenticator struct {
+	id webauthn.AuthenticatorID
+	// events, when not nil, receives what the authenticator does, as
+	// passkeyRegistration or passkeyAuthentication, for wait_passkey.
+	events chan string
+}
+
+// What wait_passkey returns, by what the authenticator did.
+const (
+	passkeyRegistration   = "registration"
+	passkeyAuthentication = "authentication"
+)
+
+// passkeyEventBuffer is how many of what the authenticator does are kept
+// for wait_passkey before it waits for them.
+const passkeyEventBuffer = 64
+
 // addVirtualAuthenticator returns an action that has the page's tab answer
 // WebAuthn with a virtual authenticator of o in place of the platform's,
-// before any page is opened. It belongs to the tab, so a popup the page
-// opens has none.
-func addVirtualAuthenticator(o *authenticatorOptions) chromedp.Action[chromedp.Void] {
+// before any page is opened, holding the credentials of creds. It belongs to
+// the tab, so a popup the page opens has none. It keeps the authenticator's
+// ID in va, for the actions that use it, and starts to record what it does
+// when va has events.
+func addVirtualAuthenticator(o *authenticatorOptions, creds []*webauthn.Credential, va *virtualAuthenticator) chromedp.Action[chromedp.Void] {
 	return func(ctx context.Context, t *chromedp.Target) (chromedp.Void, error) {
 		// The browser's own WebAuthn dialogs would wait for a user.
 		enableUI := false
 		if _, err := cdp.Call(ctx, t, webauthn.Enable, webauthn.EnableParams{EnableUI: &enableUI}); err != nil {
 			return chromedp.Void{}, fmt.Errorf("virtual_authenticator: enabling WebAuthn: %w", err)
 		}
-		if _, err := cdp.Call(ctx, t, webauthn.AddVirtualAuthenticator, webauthn.AddVirtualAuthenticatorParams{Options: o.cdpOptions()}); err != nil {
+		res, err := cdp.Call(ctx, t, webauthn.AddVirtualAuthenticator, webauthn.AddVirtualAuthenticatorParams{Options: o.cdpOptions()})
+		if err != nil {
 			return chromedp.Void{}, fmt.Errorf("virtual_authenticator: adding the authenticator: %w", err)
+		}
+		va.id = res.AuthenticatorID
+		for i, c := range creds {
+			if _, err := cdp.Call(ctx, t, addCredential, newAddCredentialParams(va.id, c)); err != nil {
+				return chromedp.Void{}, fmt.Errorf("passkeys: adding passkey %d for %s: %w", i, c.RpID, err)
+			}
+		}
+		// Recording starts after the passkeys of the file are added, so that
+		// wait_passkey waits for what the page does only. The events are
+		// subscribed to here, before any page opens, and so a registration
+		// that ends before its wait_passkey starts is not missed.
+		if va.events != nil {
+			recordPasskeyEvents(ctx, cdp.Events(ctx, t, webauthn.CredentialAdded), passkeyRegistration, va.events)
+			recordPasskeyEvents(ctx, cdp.Events(ctx, t, webauthn.CredentialAsserted), passkeyAuthentication, va.events)
+		}
+		return chromedp.Void{}, nil
+	}
+}
+
+// recordPasskeyEvents sends kind to dst for each of events, until ctx, that
+// of the actions, ends.
+func recordPasskeyEvents[E any](ctx context.Context, events iter.Seq2[E, error], kind string, dst chan<- string) {
+	go func() {
+		for _, err := range events {
+			if err != nil {
+				return
+			}
+			select {
+			case dst <- kind:
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+}
+
+// waitPasskey returns an action that waits until the authenticator has
+// registered or authenticated with a passkey, one an earlier wait_passkey
+// has not waited for, and keeps which it did in dst.
+func waitPasskey(va *virtualAuthenticator, dst *string) chromedp.Action[chromedp.Void] {
+	return func(ctx context.Context, t *chromedp.Target) (chromedp.Void, error) {
+		select {
+		case kind := <-va.events:
+			*dst = kind
+			return chromedp.Void{}, nil
+		case <-ctx.Done():
+			return chromedp.Void{}, fmt.Errorf("wait_passkey: the page registered no passkey and signed in with none: %w", ctx.Err())
+		}
+	}
+}
+
+// setUserVerified returns an action that has user verification succeed or
+// fail from then on, as when a user's fingerprint stops matching.
+func setUserVerified(va *virtualAuthenticator, verified bool) chromedp.Action[chromedp.Void] {
+	return func(ctx context.Context, t *chromedp.Target) (chromedp.Void, error) {
+		if _, err := cdp.Call(ctx, t, webauthn.SetUserVerified, webauthn.SetUserVerifiedParams{AuthenticatorID: va.id, IsUserVerified: verified}); err != nil {
+			return chromedp.Void{}, fmt.Errorf("set_user_verified: %w", err)
 		}
 		return chromedp.Void{}, nil
 	}

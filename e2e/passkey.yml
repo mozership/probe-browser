@@ -1,8 +1,8 @@
 name: Browser Passkey
 description: |
   Registers a passkey on the fixture page with a virtual authenticator, and
-  signs in with it, in one step, as the authenticator lives as long as the
-  step's browser. WebAuthn needs a secure context, so the page is opened on
+  signs in with it, in one step and, through the file save_passkeys writes,
+  in a later one. WebAuthn needs a secure context, so the page is opened on
   localhost rather than 127.0.0.1.
   Serve the fixture page first, as e2e/workflow.yml does:
   go run ./e2e/server
@@ -71,4 +71,124 @@ jobs:
         id: registered
         selector: "#registered"
         equals: "error: NotAllowedError"
+    test: res.code == 0
+
+- name: Carry a passkey over
+  steps:
+  - name: Register a passkey and save it
+    id: register
+    uses: browser
+    with:
+      headless: true
+      timeout: 1m
+      virtual_authenticator: true
+      actions:
+      - name: navigate
+        url: "{{vars.url}}/passkey.html"
+      - name: click
+        selector: "#register"
+      - name: wait_text
+        selector: "#registered"
+        equals: "registered: UP UV"
+      - name: save_passkeys
+        id: passkeys
+    test: res.code == 0 && res.filepaths.passkeys endsWith ".json"
+    outputs:
+      passkeys: res.filepaths.passkeys
+
+  - name: A new browser signs in with it
+    uses: browser
+    with:
+      headless: true
+      timeout: 1m
+      passkeys: "{{outputs.register.passkeys}}"
+      actions:
+      - name: navigate
+        url: "{{vars.url}}/passkey.html"
+      - name: click
+        selector: "#sign-in"
+      # The passkeys of the file are not a registration the page made, so
+      # the first thing the authenticator does is the sign-in.
+      - name: wait_passkey
+        id: did
+      - name: wait_text
+        id: signed_in
+        selector: "#signed-in"
+        equals: "signed in as user-7: UP UV"
+    test: res.code == 0 && res.results.did == "authentication"
+
+  - name: Without it a new browser has no passkey
+    uses: browser
+    with:
+      headless: true
+      timeout: 1m
+      virtual_authenticator: true
+      actions:
+      - name: navigate
+        url: "{{vars.url}}/passkey.html"
+      - name: click
+        selector: "#sign-in"
+      - name: wait_text
+        id: signed_in
+        selector: "#signed-in"
+        equals: "error: NotAllowedError"
+    test: res.code == 0
+
+- name: Passkey actions
+  steps:
+  - name: wait_passkey says what the authenticator did
+    uses: browser
+    with:
+      headless: true
+      timeout: 1m
+      virtual_authenticator: true
+      actions:
+      - name: navigate
+        url: "{{vars.url}}/passkey.html"
+      - name: click
+        selector: "#register"
+      - name: wait_passkey
+        id: first
+      - name: click
+        selector: "#sign-in"
+      - name: wait_passkey
+        id: second
+      - name: wait_text
+        selector: "#signed-in"
+        equals: "signed in as user-7: UP UV"
+    test: |
+      res.code == 0 &&
+      res.results.first == "registration" &&
+      res.results.second == "authentication"
+
+  - name: set_user_verified turns user verification off and on
+    uses: browser
+    with:
+      headless: true
+      timeout: 1m
+      virtual_authenticator: true
+      actions:
+      - name: navigate
+        url: "{{vars.url}}/passkey.html"
+      - name: click
+        selector: "#register"
+      - name: wait_text
+        selector: "#registered"
+        equals: "registered: UP UV"
+      - name: set_user_verified
+        value: false
+      - name: click
+        selector: "#sign-in"
+      - name: wait_text
+        id: refused
+        selector: "#signed-in"
+        equals: "error: NotAllowedError"
+      - name: set_user_verified
+        value: true
+      - name: click
+        selector: "#sign-in"
+      - name: wait_text
+        id: signed_in
+        selector: "#signed-in"
+        equals: "signed in as user-7: UP UV"
     test: res.code == 0

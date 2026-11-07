@@ -46,6 +46,7 @@ These go directly under `with`.
 | `window_h` | Integer | `1080` | Window height in pixels |
 | `evidence_dir` | String | the temporary directory | Where the page is saved when the actions fail. See [Page at failure](#page-at-failure) |
 | `storage_state` | String | none | A file `save_storage_state` wrote, whose cookies and localStorage the browser starts with. See [Carrying a login over](#carrying-a-login-over) |
+| `passkeys` | String | none | A file `save_passkeys` wrote, whose passkeys the virtual authenticator starts with. Without `virtual_authenticator`, it starts one of the defaults. See [Carrying a passkey over](#carrying-a-passkey-over) |
 | `virtual_authenticator` | Boolean or map | none | Answer WebAuthn with a virtual authenticator, so that a passkey can be registered and used without a user. See [Signing in with a passkey](#signing-in-with-a-passkey) |
 
 Starting Chrome takes part of `timeout`, often a second or more, so a short limit can run out before the first page opens.
@@ -60,10 +61,10 @@ Each entry of `actions` names its action in `name` and takes these fields:
 | `id` | actions that return something | The key for the result in `res.results` or `res.filepaths`. Without it the action's name is the key, so a later action of the same kind replaces the earlier result |
 | `url` | `navigate` | The address to open |
 | `selector` | actions on an element | A CSS selector |
-| `value` | `type`, `send_keys`, `select` | The text to use |
+| `value` | `type`, `send_keys`, `select`, `set_user_verified` | The text to use. Of `set_user_verified`, `true` or `false` |
 | `attribute` | `get_attribute` | The attribute to read, as `href` or `[href]`. Of a list, only the first entry is read |
 | `quality` | `full_screenshot` | `1` to `99` saves JPEG at that quality. Anything else, including unset, `0`, `100` and above, or a negative number, saves PNG |
-| `path` | screenshots, `save_storage_state` | Of a screenshot, deprecated: also write the image to this path; use `res.filepaths` instead. Of `save_storage_state`, where to write the file, in place of a new one in the temporary directory |
+| `path` | screenshots, `save_storage_state`, `save_passkeys` | Of a screenshot, deprecated: also write the image to this path; use `res.filepaths` instead. Of `save_storage_state` and `save_passkeys`, where to write the file, in place of a new one in the temporary directory |
 | `equals` | `wait_text` | Wait until the text is exactly this. `equals: ""` waits for an empty text |
 | `contains` | `wait_text` | Wait until the text contains this |
 | `matches` | `wait_text` | Wait until the text matches this regular expression, in [Go's syntax](https://pkg.go.dev/regexp/syntax) |
@@ -128,6 +129,16 @@ These save an image file and put its path in `res.filepaths`, under `id` or the 
 |--------|--------------|
 | `save_storage_state` | Writes the cookies of the browser and the localStorage of the page open into a JSON file, and puts its path in `res.filepaths`, under `id` or the action's name. The file goes to `path`, or to a new `probe-browser-state-*.json` in the temporary directory. See [Carrying a login over](#carrying-a-login-over) |
 
+### Passkeys
+
+These use the virtual authenticator, so they need `virtual_authenticator` or `passkeys`. See [Signing in with a passkey](#signing-in-with-a-passkey).
+
+| Action | What it does |
+|--------|--------------|
+| `wait_passkey` | Waits until the virtual authenticator registers a passkey or signs in with one, and puts which it did, `registration` or `authentication`, in `res.results`, under `id` or the action's name. See [Waiting for a passkey](#waiting-for-a-passkey) |
+| `set_user_verified` | Has user verification succeed, with `value: true`, or fail, with `value: false`, from then on. It needs an authenticator with `user_verification` |
+| `save_passkeys` | Writes the passkeys the virtual authenticator holds, private keys included, into a JSON file, and puts its path in `res.filepaths`, under `id` or the action's name. The file goes to `path`, or to a new `probe-browser-passkeys-*.json` in the temporary directory. It needs `virtual_authenticator` or `passkeys`, and fails when the authenticator holds none. See [Carrying a passkey over](#carrying-a-passkey-over) |
+
 ## Response Object
 
 When every action succeeds, the step sees:
@@ -136,7 +147,7 @@ When every action succeeds, the step sees:
 |-------|------|-------------|
 | `res.code` | Integer | `0` |
 | `res.results` | Object | What the reading actions returned, by `id` or action name |
-| `res.filepaths` | Object | Where the screenshots and the storage states were saved, by `id` or action name |
+| `res.filepaths` | Object | Where the screenshots, the storage states and the passkeys were saved, by `id` or action name |
 | `res.console_errors` | List | The errors the page wrote to its console while the actions ran, in order. See [Checking the console](#checking-the-console) |
 | `rt.duration` | String | How long the step took, such as `"663.268333ms"` |
 | `status` | Integer | `0` |
@@ -337,7 +348,110 @@ A map in its place changes the options it names, and keeps the others:
 
 An option it does not know, or a value it cannot take, fails the step before the browser starts.
 
-The authenticator speaks CTAP2 and answers at once, as a user who touches it would. It belongs to the page's tab, so a popup the page opens has none. WebAuthn works only in a secure context, so the page has to be on `https` or on `localhost`. Like the rest of the browser, the authenticator and the passkeys it holds end with the step, so the passkey is registered and used in one step.
+The authenticator speaks CTAP2 and answers at once, as a user who touches it would. It belongs to the page's tab, so a popup the page opens has none. WebAuthn works only in a secure context, so the page has to be on `https` or on `localhost`. Like the rest of the browser, the authenticator and the passkeys it holds end with the step. To sign in with a passkey in a later step, save it as [Carrying a passkey over](#carrying-a-passkey-over) shows.
+
+#### Waiting for a passkey
+
+A page that registers a passkey can take a moment to say so, as it sends the new credential to its server first. `wait_passkey` waits for the authenticator itself, and says what it did:
+
+```yaml
+      actions:
+        - name: navigate
+          url: "{{vars.url}}/account/passkeys"
+        - name: click
+          selector: "#add-passkey"
+        - name: wait_passkey
+          id: added
+        - name: save_passkeys
+    test: res.code == 0 && res.results.added == "registration"
+```
+
+What the authenticator does is kept from the start of the step, and each `wait_passkey` takes the earliest one that no `wait_passkey` before it took, so a registration that ends before its `wait_passkey` starts is not missed. The passkeys `passkeys` gives are not registrations. When the step's `timeout` runs out first, the step fails.
+
+#### Failing user verification
+
+`set_user_verified` changes, from then on, whether the authenticator verifies the user, as when a fingerprint stops matching, so that one step can register a passkey and then see how the page takes a sign-in whose verification fails:
+
+```yaml
+      virtual_authenticator: true
+      actions:
+        # ... register a passkey ...
+        - name: set_user_verified
+          value: false
+        - name: click
+          selector: "#sign-in-with-passkey"
+        - name: wait_visible
+          selector: ".passkey-error"
+```
+
+To fail it from the start, give `virtual_authenticator` `user_verified: false` instead.
+
+### Carrying a passkey over
+
+A step that registers a passkey can save it with `save_passkeys`, and a later step's authenticator starts with it when `passkeys` names the file:
+
+```yaml
+  - name: Register a passkey
+    id: register
+    uses: browser
+    with:
+      timeout: 30s
+      virtual_authenticator: true
+      actions:
+        - name: navigate
+          url: "{{vars.url}}/account/passkeys"
+        - name: click
+          selector: "#add-passkey"
+        - name: wait_visible
+          selector: ".passkey-added"
+        - name: save_passkeys
+          id: passkeys
+    test: res.code == 0
+    outputs:
+      passkeys: res.filepaths.passkeys
+
+  - name: Sign in with it
+    uses: browser
+    with:
+      timeout: 30s
+      passkeys: "{{outputs.register.passkeys}}"
+      actions:
+        - name: navigate
+          url: "{{vars.url}}/login"
+        - name: click
+          selector: "#sign-in-with-passkey"
+        - name: wait_visible
+          selector: "#dashboard"
+    test: res.code == 0
+```
+
+`passkeys` starts an authenticator of the defaults, or of the options `virtual_authenticator` gives, and fails the step with `virtual_authenticator: false`. Wait for the page to show the passkey is registered before `save_passkeys`, which fails when the authenticator holds none yet.
+
+The file lists the passkeys under `passkeys`, with the bytes in base64url, as relying parties keep them:
+
+```json
+{
+  "passkeys": [
+    {
+      "credentialId": "Wq2b...",
+      "rpId": "example.com",
+      "userHandle": "dXNlci03",
+      "userName": "user-7",
+      "privateKey": "MIGHAgEA...",
+      "signCount": 1,
+      "isResidentCredential": true,
+      "backupEligibility": false,
+      "backupState": false
+    }
+  ]
+}
+```
+
+A file can be written by hand too, so that a scheduled check signs in with a passkey registered once to a test account rather than registering one each run. `credentialId`, `rpId` and `privateKey`, an ECDSA P-256 key in PKCS#8, are required, and `isResidentCredential` is `true` when left out. A file that is missing, or a passkey the authenticator could not use, fails the step before the browser starts. A passkey is offered only to a page of its `rpId`.
+
+`signCount` is where the passkey's signature counter starts. A relying party may refuse a sign-in whose counter is not above the last one it saw, as a sign of a cloned key, so a file used again and again needs `save_passkeys` after each sign-in to keep the counter moving, or `"signCount": -1`, which leaves the passkey without a counter.
+
+The private keys sign in as the user, so the file is readable only by the user who ran Probe. Keep it out of version control and out of the files a CI run uploads, and keep a file written by hand in a secret.
 
 ### Checking the console
 

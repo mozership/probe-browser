@@ -7,10 +7,13 @@ import (
 	"iter"
 	"maps"
 	"os"
+	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/chromedp/cdproto/webauthn"
 	"github.com/chromedp/chromedp"
 	"github.com/mozership/probe/actionrpc"
 )
@@ -151,11 +154,12 @@ type ChromeDPAction struct {
 	Matches  string `map:"matches"`
 	// given names which of equals, contains and matches the workflow wrote,
 	// since an empty string is otherwise the same as one left out.
-	given    []string
-	reText   *string
-	reBuf    *[]byte
-	reState  *storageState
-	filePath *string // New: for binary file path
+	given      []string
+	reText     *string
+	reBuf      *[]byte
+	reState    *storageState
+	rePasskeys *passkeyFile
+	filePath   *string // New: for binary file path
 }
 
 func NewChromeDPAction() *ChromeDPAction {
@@ -176,6 +180,11 @@ type Req struct {
 	// localStorage the browser starts with, so that a login carries over
 	// from an earlier step.
 	StorageState string `map:"storage_state"`
+	// Passkeys names a file save_passkeys wrote, whose passkeys the virtual
+	// authenticator starts with, so that a passkey registered in an earlier
+	// step signs in. Without VirtualAuthenticator, it starts one of the
+	// defaults.
+	Passkeys string `map:"passkeys"`
 	// VirtualAuthenticator is the virtual authenticator the page's tab
 	// answers WebAuthn with, so that a passkey can be registered and used
 	// without a user. Nil means the platform's own, as without it. It has
@@ -251,6 +260,11 @@ func (req *Req) parseData(data map[string]any, opts []Option) error {
 			return err
 		}
 		req.VirtualAuthenticator = opts
+		// passkeys starts an authenticator of the defaults when none is
+		// asked for, but not against one turned off in so many words.
+		if opts == nil && req.Passkeys != "" {
+			return fmt.Errorf("passkeys needs a virtual authenticator, but virtual_authenticator is false")
+		}
 	}
 
 	return nil
@@ -360,8 +374,23 @@ func (req *Req) buildActionTasks() ([]chromedp.Action[chromedp.Void], error) {
 	tasks := []chromedp.Action[chromedp.Void]{}
 
 	// The authenticator comes first, so that it is there for every page.
-	if req.VirtualAuthenticator != nil {
-		tasks = append(tasks, addVirtualAuthenticator(req.VirtualAuthenticator))
+	authenticator := req.VirtualAuthenticator
+	var creds []*webauthn.Credential
+	if req.Passkeys != "" {
+		var err error
+		if creds, err = readPasskeys(req.Passkeys); err != nil {
+			return nil, err
+		}
+		if authenticator == nil {
+			authenticator = defaultAuthenticatorOptions()
+		}
+	}
+	va := &virtualAuthenticator{}
+	if slices.ContainsFunc(req.Actions, func(a *ChromeDPAction) bool { return a.Name == "wait_passkey" }) {
+		va.events = make(chan string, passkeyEventBuffer)
+	}
+	if authenticator != nil {
+		tasks = append(tasks, addVirtualAuthenticator(authenticator, creds, va))
 	}
 
 	if req.StorageState != "" {
@@ -481,6 +510,32 @@ func (req *Req) buildActionTasks() ([]chromedp.Action[chromedp.Void], error) {
 			var s storageState
 			tasks = append(tasks, saveStorageState(&s))
 			action.reState = &s
+		case "save_passkeys":
+			if authenticator == nil {
+				return nil, fmt.Errorf("save_passkeys needs virtual_authenticator or passkeys, as the passkeys it saves are those of the virtual authenticator")
+			}
+			var f passkeyFile
+			tasks = append(tasks, savePasskeys(&va.id, &f))
+			action.rePasskeys = &f
+		case "wait_passkey":
+			if authenticator == nil {
+				return nil, fmt.Errorf("wait_passkey needs virtual_authenticator or passkeys, as it waits for the virtual authenticator")
+			}
+			var kind string
+			tasks = append(tasks, waitPasskey(va, &kind))
+			action.reText = &kind
+		case "set_user_verified":
+			if authenticator == nil {
+				return nil, fmt.Errorf("set_user_verified needs virtual_authenticator or passkeys, as it sets the virtual authenticator")
+			}
+			if !authenticator.UserVerification {
+				return nil, fmt.Errorf("set_user_verified needs user_verification, as an authenticator without it verifies no user")
+			}
+			verified, err := strconv.ParseBool(action.Value)
+			if err != nil {
+				return nil, fmt.Errorf("set_user_verified takes value true or false, not %q", action.Value)
+			}
+			tasks = append(tasks, setUserVerified(va, verified))
 		default:
 			return nil, fmt.Errorf("unsupported action type: %s", action.Name)
 		}
@@ -495,7 +550,7 @@ func (req *Req) collectResults() (map[string]string, map[string]string, error) {
 
 	for _, action := range req.Actions {
 		switch action.Name {
-		case "text", "value", "get_attribute", "wait_text", "get_html":
+		case "text", "value", "get_attribute", "wait_text", "get_html", "wait_passkey":
 			key := action.Name
 			if action.ID != "" {
 				key = action.ID
@@ -510,6 +565,19 @@ func (req *Req) collectResults() (map[string]string, map[string]string, error) {
 			path, err := writeStorageState(action.reState, action.Path)
 			if err != nil {
 				return nil, nil, fmt.Errorf("failed to save the storage state: %w", err)
+			}
+			key := action.Name
+			if action.ID != "" {
+				key = action.ID
+			}
+			filePaths[key] = path
+		case "save_passkeys":
+			if action.rePasskeys == nil {
+				continue
+			}
+			path, err := writePasskeys(action.rePasskeys, action.Path)
+			if err != nil {
+				return nil, nil, fmt.Errorf("failed to save the passkeys: %w", err)
 			}
 			key := action.Name
 			if action.ID != "" {
