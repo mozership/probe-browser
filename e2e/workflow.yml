@@ -170,7 +170,7 @@ jobs:
       res.stdout contains '"Uncaught TypeError: Cannot read properties of null' &&
       res.stdout contains "page at failure: url http://localhost:8090/console.html"
 
-  - name: Saving before a passkey is registered fails
+  - name: Saving or waiting before a passkey is registered fails
     uses: shell
     with:
       cmd: |
@@ -184,4 +184,5 @@ jobs:
     test: |
       res.stdout contains "exit=3" &&
       res.stdout contains "save_passkeys: the authenticator holds no passkey" &&
+      res.stdout contains "wait_passkey: the page registered no passkey and signed in with none: context deadline exceeded" &&
       res.stdout contains "page at failure: url http://localhost:8090/passkey.html"
