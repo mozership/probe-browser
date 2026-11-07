@@ -36,11 +36,19 @@ jobs:
       - name: text
         id: cleared
         selector: "#editor-text"
+      # An image has no text, but it is content to delete.
+      - name: type
+        selector: "#image-editor"
+        value: ""
+      - name: get_html
+        id: image_editor
+        selector: "#image-editor"
     test: |
       res.code == 0 &&
       res.results.editor == "Hello, editor" &&
       res.results.typed == "editor: Hello, editor" &&
-      res.results.cleared == "editor:"
+      res.results.cleared == "editor:" &&
+      !(res.results.image_editor contains "<img")
 
   - name: Press Enter to submit a form without a button
     uses: browser

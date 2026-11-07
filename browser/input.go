@@ -21,8 +21,8 @@ const (
 	// typeEditable is a contenteditable element, such as a rich text
 	// editor, whose content is selected, so that the keys replace it.
 	typeEditable = "editable"
-	// typeEditableEmpty is a contenteditable element with no text, where
-	// there is nothing to replace.
+	// typeEditableEmpty is a contenteditable element with no content,
+	// where there is nothing to replace.
 	typeEditableEmpty = "editable-empty"
 )
 
@@ -49,7 +49,9 @@ const typePrepareScript = `((sel) => {
 	const selection = window.getSelection();
 	selection.removeAllRanges();
 	selection.addRange(range);
-	return el.textContent === "" ? "editable-empty" : "editable";
+	// The selection, rather than the text, tells whether there is anything
+	// to replace, since an image has no text.
+	return range.collapsed ? "editable-empty" : "editable";
 })(%s)`
 
 // typeText returns an action that waits until sel is visible, then replaces
