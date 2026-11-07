@@ -61,7 +61,7 @@ Each entry of `actions` names its action in `name` and takes these fields:
 | `id` | actions that return something | The key for the result in `res.results` or `res.filepaths`. Without it the action's name is the key, so a later action of the same kind replaces the earlier result |
 | `url` | `navigate` | The address to open |
 | `selector` | actions on an element | A CSS selector |
-| `value` | `type`, `send_keys`, `select`, `set_user_verified` | The text to use. Of `set_user_verified`, `true` or `false` |
+| `value` | `type`, `send_keys`, `press`, `set_value`, `select`, `set_user_verified` | The text to use. Of `press`, the key, as `Enter` or `Shift+Tab`. Of `set_user_verified`, `true` or `false` |
 | `attribute` | `get_attribute` | The attribute to read, as `href` or `[href]`. Of a list, only the first entry is read |
 | `quality` | `full_screenshot` | `1` to `99` saves JPEG at that quality. Anything else, including unset, `0`, `100` and above, or a negative number, saves PNG |
 | `path` | screenshots, `save_storage_state`, `save_passkeys` | Of a screenshot, deprecated: also write the image to this path; use `res.filepaths` instead. Of `save_storage_state` and `save_passkeys`, where to write the file, in place of a new one in the temporary directory |
@@ -81,7 +81,7 @@ These open a page or hold the step until the page is in the state the next actio
 |--------|--------------|
 | `navigate` | Opens `url` and waits for the page to load. A network error the browser reports, such as `net::ERR_CONNECTION_REFUSED`, fails it at once; an address that never answers keeps it waiting until `timeout` |
 | `wait_visible` | Waits until `selector` is visible |
-| `wait_not_visible` | Waits until `selector` is not visible |
+| `wait_not_visible` | Waits until no element that matches `selector` is visible. An element taken out of the page counts as not visible, as one a conditional render removes, and so does one that was never there: after an action that brings the element, wait for it with `wait_visible` first |
 | `wait_enabled` | Waits until `selector` is visible and enabled |
 | `wait_ready` | Waits until the page's `body` is ready. `selector` is ignored |
 
@@ -105,7 +105,9 @@ These act on the page the way a user would. They return nothing.
 |--------|--------------|
 | `click` | Clicks `selector` once it is visible |
 | `double_click` | Double-clicks `selector` once it is visible |
-| `type`, `send_keys` | Clears `selector`, then types `value` into it |
+| `type`, `send_keys` | Types `value` into `selector` in place of what it holds, once it is visible. Of an `input` or a `textarea`, the value is cleared first. Of a contenteditable element, such as a rich text editor, the content is selected and typed over, as after Ctrl+A, so that the editor sees the change; an empty `value` deletes it. Any other element fails the step |
+| `press` | Presses the key `value` on `selector`, once it is visible, or without `selector` on the element that has the focus. See [Pressing a key](#pressing-a-key) |
+| `set_value` | Sets the value of the `input`, `textarea` or `select` at `selector` to `value`, once it is visible, and fires `input` and `change` as a user's edit does. It does not type, so a date is given as `2000-01-02` whatever the browser's locale. A value the field does not take, such as `2000-13-01` of a date, fails the step |
 | `submit` | Submits the form `selector` belongs to |
 | `focus` | Focuses `selector` |
 | `scroll` | Scrolls `selector` into view |
@@ -253,6 +255,34 @@ When the step's `timeout` runs out first, the step fails with an action error th
 ```
 wait_text "#status": the text was "Loading", want it to match "^\\d+ orders$": context deadline exceeded (page at failure: ...)
 ```
+
+### Pressing a key
+
+A `press` names the key as `KeyboardEvent.key` does, as `Enter`, `Tab`, `Escape`, `Backspace` or `ArrowDown`, or gives a single character, as `a`. `Space` is taken for `" "`. Modifiers come before the key, joined by `+`: `Alt`, `Control`, `Meta` and `Shift`, as in `Shift+Tab` or `Control+a`. A key it does not know is refused before the browser starts.
+
+A search field that submits on Enter, with no button to click:
+
+```yaml
+  - name: Search
+    uses: browser
+    with:
+      timeout: 30s
+      actions:
+        - name: navigate
+          url: "{{vars.url}}/"
+        - name: type
+          selector: "#search"
+          value: probe
+        - name: press
+          value: Enter
+        - name: wait_text
+          id: heading
+          selector: h1
+          contains: probe
+    test: res.code == 0
+```
+
+A `type` whose `value` ends in `"\r"` presses Enter too, but only in a double-quoted YAML string: unquoted or in single quotes, `\r` is typed as two characters.
 
 ### Carrying a login over
 

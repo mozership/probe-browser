@@ -1,0 +1,134 @@
+name: Browser Input
+description: |
+  Types into a contenteditable editor, presses keys, sets the value of a
+  date input, and waits for a panel to be taken out of the page.
+  Serve the fixture page first, as e2e/workflow.yml does:
+  go run ./e2e/server
+actions:
+  browser: ./action
+vars:
+  url: "{{ URL ?? 'http://localhost:8090' }}"
+jobs:
+- name: Input
+  steps:
+  - name: Type over the content of a contenteditable editor
+    uses: browser
+    with:
+      headless: true
+      timeout: 30s
+      actions:
+      - name: navigate
+        url: "{{vars.url}}/input.html"
+      - name: type
+        selector: "#editor"
+        value: Hello, editor
+      - name: text
+        id: editor
+        selector: "#editor"
+      - name: text
+        id: typed
+        selector: "#editor-text"
+      # An empty value clears the editor. text trims the space after the
+      # colon.
+      - name: type
+        selector: "#editor"
+        value: ""
+      - name: text
+        id: cleared
+        selector: "#editor-text"
+    test: |
+      res.code == 0 &&
+      res.results.editor == "Hello, editor" &&
+      res.results.typed == "editor: Hello, editor" &&
+      res.results.cleared == "editor:"
+
+  - name: Press Enter to submit a form without a button
+    uses: browser
+    with:
+      headless: true
+      timeout: 30s
+      actions:
+      - name: navigate
+        url: "{{vars.url}}/input.html"
+      - name: type
+        selector: "#q"
+        value: probe
+      - name: press
+        value: Enter
+      - name: wait_text
+        id: searched
+        selector: "#searched"
+        equals: "searched: probe"
+      - name: press
+        selector: "#q"
+        value: Shift+Tab
+      - name: text
+        id: shift_tab
+        selector: "#last-key"
+      - name: press
+        value: Escape
+      - name: text
+        id: escape
+        selector: "#last-key"
+    test: |
+      res.code == 0 &&
+      res.results.searched == "searched: probe" &&
+      res.results.shift_tab == "key: Shift+Tab" &&
+      res.results.escape == "key: Escape"
+
+  - name: Set a date whatever the locale
+    uses: browser
+    with:
+      headless: true
+      timeout: 30s
+      actions:
+      - name: navigate
+        url: "{{vars.url}}/input.html"
+      - name: set_value
+        selector: "#date"
+        value: "2000-01-02"
+      - name: value
+        id: value
+        selector: "#date"
+      - name: wait_text
+        id: changed
+        selector: "#date-value"
+        equals: "date: 2000-01-02"
+    test: |
+      res.code == 0 &&
+      res.results.value == "2000-01-02" &&
+      res.results.changed == "date: 2000-01-02"
+
+  - name: Wait for a panel taken out of the page
+    uses: browser
+    with:
+      headless: true
+      timeout: 30s
+      actions:
+      - name: navigate
+        url: "{{vars.url}}/input.html"
+      - name: click
+        selector: "#close"
+      - name: wait_not_visible
+        selector: "#panel-body"
+      - name: get_html
+        id: panels
+        selector: "#panels"
+    test: res.code == 0 && !(res.results.panels contains "panel-body")
+
+  - name: Wait for a panel hidden
+    uses: browser
+    with:
+      headless: true
+      timeout: 30s
+      actions:
+      - name: navigate
+        url: "{{vars.url}}/input.html"
+      - name: click
+        selector: "#hide"
+      - name: wait_not_visible
+        selector: "#panel-body"
+      - name: get_html
+        id: panels
+        selector: "#panels"
+    test: res.code == 0 && res.results.panels contains "panel-body"

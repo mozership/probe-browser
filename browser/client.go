@@ -423,8 +423,15 @@ func (req *Req) buildActionTasks() ([]chromedp.Action[chromedp.Void], error) {
 		case "click":
 			tasks = append(tasks, chromedp.Click(action.Selector, chromedp.NodeVisible))
 		case "send_keys", "type":
-			tasks = append(tasks, chromedp.Clear(action.Selector))
-			tasks = append(tasks, chromedp.SendKeys(action.Selector, action.Value, chromedp.NodeVisible))
+			tasks = append(tasks, typeText(action.Selector, action.Value))
+		case "press":
+			press, err := pressKey(action.Selector, action.Value)
+			if err != nil {
+				return nil, err
+			}
+			tasks = append(tasks, press)
+		case "set_value":
+			tasks = append(tasks, setValue(action.Selector, action.Value))
 		case "full_screenshot":
 			var buf []byte
 			tasks = append(tasks, store(chromedp.FullScreenshot(fullScreenshotQuality(action.Quality)), &buf))
@@ -440,7 +447,7 @@ func (req *Req) buildActionTasks() ([]chromedp.Action[chromedp.Void], error) {
 		case "wait_ready":
 			tasks = append(tasks, chromedp.WaitReady("body"))
 		case "wait_not_visible":
-			tasks = append(tasks, chromedp.WaitNotVisible(chromedp.CSS(action.Selector)))
+			tasks = append(tasks, waitNotVisible(action.Selector))
 		case "submit":
 			tasks = append(tasks, chromedp.Submit(action.Selector, chromedp.NodeVisible))
 		case "select":
