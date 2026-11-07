@@ -1,0 +1,73 @@
+name: Browser Input Failure
+description: |
+  Types, presses and sets values the fixture page cannot take, and waits for
+  an element that stays visible, so that e2e/workflow.yml can check each step
+  fails with the reason.
+  This workflow is expected to fail with action errors.
+actions:
+  browser: ./action
+vars:
+  url: "{{ URL ?? 'http://localhost:8090' }}"
+  evidence_dir: "{{ EVIDENCE_DIR ?? '/tmp/probe-browser-evidence' }}"
+jobs:
+- name: Not a field
+  steps:
+  - name: Types into a heading
+    uses: browser
+    with:
+      headless: true
+      timeout: 15s
+      evidence_dir: "{{vars.evidence_dir}}"
+      actions:
+      - name: navigate
+        url: "{{vars.url}}/input.html"
+      - name: type
+        selector: h1
+        value: x
+    test: res.code == 0
+
+- name: Unknown key
+  steps:
+  - name: Presses a key that is not there
+    uses: browser
+    with:
+      headless: true
+      timeout: 15s
+      evidence_dir: "{{vars.evidence_dir}}"
+      actions:
+      - name: navigate
+        url: "{{vars.url}}/input.html"
+      - name: press
+        value: Return
+    test: res.code == 0
+
+- name: Invalid date
+  steps:
+  - name: Sets a date that is not one
+    uses: browser
+    with:
+      headless: true
+      timeout: 15s
+      evidence_dir: "{{vars.evidence_dir}}"
+      actions:
+      - name: navigate
+        url: "{{vars.url}}/input.html"
+      - name: set_value
+        selector: "#date"
+        value: "2000-13-01"
+    test: res.code == 0
+
+- name: Still visible
+  steps:
+  - name: Waits for a heading to go
+    uses: browser
+    with:
+      headless: true
+      timeout: 5s
+      evidence_dir: "{{vars.evidence_dir}}"
+      actions:
+      - name: navigate
+        url: "{{vars.url}}/input.html"
+      - name: wait_not_visible
+        selector: h1
+    test: res.code == 0

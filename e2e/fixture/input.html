@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Probe Browser Input Fixture</title>
+</head>
+<body>
+  <h1>Input</h1>
+
+  <!-- A rich text editor is a contenteditable element, not a field. -->
+  <div id="editor" contenteditable="true">a draft</div>
+  <p id="editor-text">none</p>
+  <!-- An editor that holds an image, which has no text. -->
+  <div id="image-editor" contenteditable="true"><img alt="a picture" width="20" height="20"></div>
+
+  <!-- A search field that only Enter submits: the form has no button. -->
+  <form id="search">
+    <input id="q" name="q" value="old">
+  </form>
+  <p id="searched">none</p>
+
+  <p id="last-key">none</p>
+
+  <label for="date">Date</label>
+  <input id="date" type="date">
+  <p id="date-value">none</p>
+
+  <!-- A panel that closing takes out of the page, as a conditional render
+       does, rather than hides. -->
+  <section id="panels">
+    <div id="panel">
+      <p id="panel-body">An open panel</p>
+      <button id="close" type="button">Close</button>
+    </div>
+    <button id="hide" type="button">Hide the panel</button>
+  </section>
+
+  <script>
+    const show = (id, text) => { document.getElementById(id).textContent = text; };
+    // The text is shown on input, as an editor tells its state from its
+    // input events.
+    document.getElementById("editor").addEventListener("input", (e) => {
+      show("editor-text", "editor: " + e.target.textContent);
+    });
+    document.getElementById("search").addEventListener("submit", (e) => {
+      e.preventDefault();
+      show("searched", "searched: " + document.getElementById("q").value);
+    });
+    document.addEventListener("keydown", (e) => {
+      const mods = ["Control", "Alt", "Meta", "Shift"].filter((m) => e.getModifierState(m));
+      show("last-key", "key: " + [...mods, e.key].join("+"));
+    });
+    // A page learns a date from its change event, as from a user's choice.
+    document.getElementById("date").addEventListener("change", (e) => {
+      show("date-value", "date: " + e.target.value);
+    });
+    // The panel is taken out after a while, so wait_not_visible has to wait.
+    document.getElementById("close").addEventListener("click", () => {
+      setTimeout(() => document.getElementById("panel").remove(), 500);
+    });
+    document.getElementById("hide").addEventListener("click", () => {
+      setTimeout(() => { document.getElementById("panel").style.display = "none"; }, 500);
+    });
+  </script>
+</body>
+</html>
