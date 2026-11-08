@@ -103,6 +103,16 @@ jobs:
     test: res.code == 0
     echo: "{{res.stdout}}"
 
+  - name: selectors.yml
+    uses: shell
+    with:
+      cmd: probe e2e/selectors.yml
+      timeout: 2m
+      env:
+        DISPLAY: ":99"
+    test: res.code == 0
+    echo: "{{res.stdout}}"
+
   - name: A failed browser action saves the page
     uses: shell
     with:
@@ -182,6 +192,24 @@ jobs:
       res.stdout contains 'press "Return": "Return" is not a key' &&
       res.stdout contains 'set_value "#date": the element did not take the value, and holds ""' &&
       res.stdout contains 'wait_not_visible "h1": an element is still visible: context deadline exceeded'
+
+  - name: An element that cannot be found fails with the reason
+    uses: shell
+    with:
+      cmd: |
+        dir=$(mktemp -d)
+        EVIDENCE_DIR="$dir" probe e2e/selectors-failure.yml
+        echo "exit=$?"
+        rm -rf "$dir"
+      timeout: 1m
+      env:
+        DISPLAY: ":99"
+    test: |
+      res.stdout contains "exit=3" &&
+      res.stdout contains 'wait_text "button" with text "削除": no visible element matched' &&
+      res.stdout contains 'wait_text "#closed-host": the text was "", want it to contain "closed"' &&
+      res.stdout contains "navigate does not take has_text, as it acts on no element" &&
+      res.stdout contains "click needs selector or has_text, to find the element it acts on"
 
   - name: A failure names the errors the page wrote
     uses: shell

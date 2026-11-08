@@ -113,15 +113,16 @@ func TestBuildActionTasks_PressRefusedBeforeTheBrowser(t *testing.T) {
 func TestInputScripts_QuoteTheirArguments(t *testing.T) {
 	// A selector and a value with quotes in them stay strings rather than
 	// break the script.
-	sel, value := jsString(`input[name='d']`), jsString(`10" wide`)
+	tg := target{css: `input[name='d']`, text: `"Due"`}
+	value := jsString(`10" wide`)
 	testCases := []struct {
 		name   string
 		script string
 		want   string
 	}{
-		{"type", fmt.Sprintf(typePrepareScript, sel), `})("input[name='d']")`},
-		{"set_value", fmt.Sprintf(setValueScript, sel, value), `})("input[name='d']", "10\" wide")`},
-		{"wait_not_visible", fmt.Sprintf(visibleCountScript, sel), `).length)("input[name='d']")`},
+		{"type", fmt.Sprintf(typePrepareScript, tg.first()), `.all("input[name='d']", "\"Due\"")[0] ?? null))`},
+		{"set_value", fmt.Sprintf(setValueScript, tg.first(), value), `.all("input[name='d']", "\"Due\"")[0] ?? null), "10\" wide")`},
+		{"wait_not_visible", fmt.Sprintf(visibleCountScript, findScript, tg.all()), `.all("input[name='d']", "\"Due\""))`},
 	}
 
 	for _, tc := range testCases {
@@ -136,7 +137,7 @@ func TestInputScripts_QuoteTheirArguments(t *testing.T) {
 func TestPollNotVisible(t *testing.T) {
 	counts := []int{2, 1, 0}
 	calls := 0
-	err := pollNotVisible(context.Background(), "#panel", func(context.Context) (int, error) {
+	err := pollNotVisible(context.Background(), target{css: "#panel"}, func(context.Context) (int, error) {
 		n := counts[calls]
 		calls++
 		return n, nil
@@ -153,7 +154,7 @@ func TestPollNotVisible_NoneAtFirst(t *testing.T) {
 	// An element that is not in the page is not visible, so there is
 	// nothing to wait for.
 	calls := 0
-	err := pollNotVisible(context.Background(), "#gone", func(context.Context) (int, error) {
+	err := pollNotVisible(context.Background(), target{css: "#gone"}, func(context.Context) (int, error) {
 		calls++
 		return 0, nil
 	})
@@ -175,7 +176,7 @@ func TestPollNotVisible_StillVisible(t *testing.T) {
 		t.Run(tc.want, func(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 3*notVisiblePollInterval)
 			defer cancel()
-			err := pollNotVisible(ctx, "h1", func(context.Context) (int, error) { return tc.count, nil })
+			err := pollNotVisible(ctx, target{css: "h1"}, func(context.Context) (int, error) { return tc.count, nil })
 			if err == nil || err.Error() != tc.want {
 				t.Errorf("got %v, want %q", err, tc.want)
 			}
@@ -190,7 +191,7 @@ func TestPollNotVisible_ErrorFailsAtOnce(t *testing.T) {
 	// A selector the page cannot read gives the same error every time.
 	calls := 0
 	start := time.Now()
-	err := pollNotVisible(context.Background(), "[", func(context.Context) (int, error) {
+	err := pollNotVisible(context.Background(), target{css: "["}, func(context.Context) (int, error) {
 		calls++
 		return 0, errors.New("SyntaxError: '[' is not a valid selector")
 	})
@@ -205,7 +206,7 @@ func TestPollNotVisible_ErrorFailsAtOnce(t *testing.T) {
 func TestPollNotVisible_DeadlineBeforeAnyCount(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	err := pollNotVisible(ctx, "#panel", func(ctx context.Context) (int, error) { return 0, ctx.Err() })
+	err := pollNotVisible(ctx, target{css: "#panel"}, func(ctx context.Context) (int, error) { return 0, ctx.Err() })
 	if err == nil || err.Error() != `wait_not_visible "#panel": context canceled` {
 		t.Errorf("got %v, want the context's error", err)
 	}

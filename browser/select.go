@@ -12,8 +12,7 @@ import (
 // does, so that the page's handlers run. It returns why it could not, or ""
 // when it did. It is wrapped in a function, as the scripts of hover and
 // right_click are, so that nothing is left in the page's global scope.
-const selectScript = `((sel, want) => {
-	const el = document.querySelector(sel);
+const selectScript = `((el, want) => {
 	if (!el) {
 		return "no element matched";
 	}
@@ -39,12 +38,12 @@ const selectScript = `((sel, want) => {
 	return "";
 })(%s, %s)`
 
-// selectOption returns an action that waits until sel is visible, then
-// chooses the option value names in it.
-func selectOption(sel, value string) chromedp.Action[chromedp.Void] {
-	script := fmt.Sprintf(selectScript, jsString(sel), jsString(value))
+// selectOption returns an action that waits until the target is visible,
+// then chooses the option value names in it.
+func selectOption(tg target, value string) chromedp.Action[chromedp.Void] {
+	script := fmt.Sprintf(selectScript, tg.first(), jsString(value))
 	return func(ctx context.Context, t *chromedp.Target) (chromedp.Void, error) {
-		if _, err := chromedp.WaitVisible(chromedp.CSS(sel))(ctx, t); err != nil {
+		if _, err := chromedp.WaitVisible(tg.path(), tg.opts()...)(ctx, t); err != nil {
 			return chromedp.Void{}, err
 		}
 		reason, err := chromedp.Evaluate[string](script)(ctx, t)
@@ -52,7 +51,7 @@ func selectOption(sel, value string) chromedp.Action[chromedp.Void] {
 			return chromedp.Void{}, err
 		}
 		if reason != "" {
-			return chromedp.Void{}, fmt.Errorf("select %q: %s", sel, reason)
+			return chromedp.Void{}, fmt.Errorf("select %s: %s", tg, reason)
 		}
 		return chromedp.Void{}, nil
 	}

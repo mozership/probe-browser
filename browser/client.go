@@ -153,6 +153,9 @@ type ChromeDPAction struct {
 	Contains    string `map:"contains"`
 	NotContains string `map:"not_contains"`
 	Matches     string `map:"matches"`
+	// HasText narrows the elements Selector matches to those whose text
+	// contains it, or picks elements by their text alone without Selector.
+	HasText string `map:"has_text"`
 	// CookieName is the cookie get_cookie reads.
 	CookieName string `map:"cookie_name"`
 	// given names which of the text fields the workflow wrote,
@@ -413,31 +416,35 @@ func (req *Req) buildActionTasks() ([]chromedp.Action[chromedp.Void], error) {
 		if action.Name != "get_cookie" && action.CookieName != "" {
 			return nil, fmt.Errorf("%s does not take cookie_name: only get_cookie does", action.Name)
 		}
+		tg := action.target()
+		if err := action.checkTarget(); err != nil {
+			return nil, err
+		}
 		switch action.Name {
 		case "navigate":
 			tasks = append(tasks, chromedp.Navigate(action.URL))
 		case "wait_visible":
-			tasks = append(tasks, chromedp.WaitVisible(chromedp.CSS(action.Selector)))
+			tasks = append(tasks, chromedp.WaitVisible(tg.path(), tg.opts()...))
 		case "text":
 			var text string
-			tasks = append(tasks, store(chromedp.Text(chromedp.CSS(action.Selector)), &text))
+			tasks = append(tasks, readText(tg, false, &text))
 			action.reText = &text
 		case "value":
 			var text string
-			tasks = append(tasks, store(chromedp.Value(action.Selector), &text))
+			tasks = append(tasks, store(chromedp.Value(tg.path(), tg.opts()...), &text))
 			action.reText = &text
 		case "click":
-			tasks = append(tasks, chromedp.Click(action.Selector, chromedp.NodeVisible))
+			tasks = append(tasks, chromedp.Click(tg.path(), tg.opts(chromedp.NodeVisible)...))
 		case "send_keys", "type":
-			tasks = append(tasks, typeText(action.Selector, action.Value))
+			tasks = append(tasks, typeText(tg, action.Value))
 		case "press":
-			press, err := pressKey(action.Selector, action.Value)
+			press, err := pressKey(tg, action.Value)
 			if err != nil {
 				return nil, err
 			}
 			tasks = append(tasks, press)
 		case "set_value":
-			tasks = append(tasks, setValue(action.Selector, action.Value))
+			tasks = append(tasks, setValue(tg, action.Value))
 		case "full_screenshot":
 			var buf []byte
 			tasks = append(tasks, store(chromedp.FullScreenshot(fullScreenshotQuality(action.Quality)), &buf))
@@ -448,22 +455,22 @@ func (req *Req) buildActionTasks() ([]chromedp.Action[chromedp.Void], error) {
 			action.reBuf = &buf
 		case "screenshot":
 			var buf []byte
-			tasks = append(tasks, store(chromedp.Screenshot(action.Selector, chromedp.NodeVisible), &buf))
+			tasks = append(tasks, store(chromedp.Screenshot(tg.path(), tg.opts(chromedp.NodeVisible)...), &buf))
 			action.reBuf = &buf
 		case "wait_ready":
-			tasks = append(tasks, chromedp.WaitReady("body"))
+			tasks = append(tasks, chromedp.WaitReady(chromedp.CSS("body")))
 		case "wait_not_visible":
-			tasks = append(tasks, waitNotVisible(action.Selector))
+			tasks = append(tasks, waitNotVisible(tg))
 		case "submit":
-			tasks = append(tasks, chromedp.Submit(action.Selector, chromedp.NodeVisible))
+			tasks = append(tasks, chromedp.Submit(tg.path(), tg.opts(chromedp.NodeVisible)...))
 		case "select":
-			tasks = append(tasks, selectOption(action.Selector, action.Value))
+			tasks = append(tasks, selectOption(tg, action.Value))
 		case "scroll":
-			tasks = append(tasks, chromedp.ScrollIntoView(action.Selector, chromedp.NodeVisible))
+			tasks = append(tasks, chromedp.ScrollIntoView(tg.path(), tg.opts(chromedp.NodeVisible)...))
 		case "get_attribute":
 			if len(action.Attribute) > 0 {
 				var attr chromedp.AttributeResult
-				tasks = append(tasks, store(chromedp.AttributeValue(action.Selector, action.Attribute[0], chromedp.NodeVisible), &attr))
+				tasks = append(tasks, store(chromedp.AttributeValue(tg.path(), action.Attribute[0], tg.opts(chromedp.NodeVisible)...), &attr))
 				action.reText = &attr.Value
 			} else {
 				return nil, fmt.Errorf("attribute parameter is required for get_attribute action")
@@ -475,18 +482,15 @@ func (req *Req) buildActionTasks() ([]chromedp.Action[chromedp.Void], error) {
 			}
 			var text string
 			if m == nil {
-				tasks = append(tasks, chromedp.WaitVisible(chromedp.CSS(action.Selector)))
-				tasks = append(tasks, store(chromedp.Text(chromedp.CSS(action.Selector)), &text))
+				tasks = append(tasks, readText(tg, true, &text))
 			} else {
-				tasks = append(tasks, waitText(action.Selector, m, &text))
+				tasks = append(tasks, waitText(tg, m, &text))
 			}
 			action.reText = &text
 		case "hover":
-			// The script runs in the page's global scope, so it is wrapped
-			// in a function: a top-level const would clash with the next
-			// hover or right_click on the same page.
-			tasks = append(tasks, chromedp.EvaluateAsDevTools[chromedp.Void](fmt.Sprintf(`(() => {
-				const el = document.querySelector(%s);
+			// The script is a function's, as it runs in the page's global
+			// scope, where a top-level const would clash with the next one.
+			tasks = append(tasks, chromedp.EvaluateAsDevTools[chromedp.Void](fmt.Sprintf(`((el) => {
 				if (el) {
 					const event = new MouseEvent('mouseover', {
 						view: window,
@@ -495,20 +499,19 @@ func (req *Req) buildActionTasks() ([]chromedp.Action[chromedp.Void], error) {
 					});
 					el.dispatchEvent(event);
 				}
-			})()`, jsString(action.Selector))))
+			})(%s)`, tg.first())))
 		case "focus":
-			tasks = append(tasks, chromedp.Focus(action.Selector, chromedp.NodeVisible))
+			tasks = append(tasks, chromedp.Focus(tg.path(), tg.opts(chromedp.NodeVisible)...))
 		case "get_html":
 			var html string
-			tasks = append(tasks, store(chromedp.OuterHTML(action.Selector, chromedp.NodeVisible), &html))
+			tasks = append(tasks, store(chromedp.OuterHTML(tg.path(), tg.opts(chromedp.NodeVisible)...), &html))
 			action.reText = &html
 		case "wait_enabled":
-			tasks = append(tasks, chromedp.WaitEnabled(action.Selector, chromedp.NodeVisible))
+			tasks = append(tasks, chromedp.WaitEnabled(tg.path(), tg.opts(chromedp.NodeVisible)...))
 		case "double_click":
-			tasks = append(tasks, chromedp.DoubleClick(action.Selector, chromedp.NodeVisible))
+			tasks = append(tasks, chromedp.DoubleClick(tg.path(), tg.opts(chromedp.NodeVisible)...))
 		case "right_click":
-			tasks = append(tasks, chromedp.EvaluateAsDevTools[chromedp.Void](fmt.Sprintf(`(() => {
-				const el = document.querySelector(%s);
+			tasks = append(tasks, chromedp.EvaluateAsDevTools[chromedp.Void](fmt.Sprintf(`((el) => {
 				if (el) {
 					const event = new MouseEvent('contextmenu', {
 						view: window,
@@ -518,7 +521,7 @@ func (req *Req) buildActionTasks() ([]chromedp.Action[chromedp.Void], error) {
 					});
 					el.dispatchEvent(event);
 				}
-			})()`, jsString(action.Selector))))
+			})(%s)`, tg.first())))
 		case "get_cookie":
 			if action.CookieName == "" {
 				return nil, fmt.Errorf("get_cookie needs cookie_name, the name of the cookie to read")

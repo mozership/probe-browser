@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <title>Probe Browser Selectors Fixture</title>
+</head>
+<body>
+  <h1>Selectors</h1>
+
+  <!-- Buttons a user tells apart by their text only: none has an id, a
+       test id or a label. -->
+  <div data-slot="card-content">
+    <div>
+      <button type="button">リカバリーコード</button>
+      <button type="button">パスキー</button>
+    </div>
+  </div>
+  <p id="picked">none</p>
+
+  <ul data-slot="dropdown-menu-content">
+    <li data-slot="dropdown-menu-item"><span>名前を変更</span></li>
+    <li data-slot="dropdown-menu-item"><span>ラベルを削除</span></li>
+  </ul>
+  <p id="menu">none</p>
+
+  <!-- A message body that a component renders into its shadow root. -->
+  <div data-testid="message-body"></div>
+  <p id="body-clicked">none</p>
+
+  <!-- A closed shadow root, which no script outside it can reach. -->
+  <div id="closed-host"></div>
+
+  <script>
+    const show = (id, text) => { document.getElementById(id).textContent = text; };
+    document.querySelectorAll('[data-slot="card-content"] button').forEach((b) => {
+      b.addEventListener("click", () => show("picked", "picked: " + b.textContent));
+    });
+    document.querySelectorAll('[data-slot="dropdown-menu-item"]').forEach((li) => {
+      li.addEventListener("click", () => show("menu", "menu: " + li.textContent));
+    });
+
+    // The body arrives a moment after the page, as a fetched message does.
+    setTimeout(() => {
+      const root = document.querySelector('[data-testid="message-body"]').attachShadow({ mode: "open" });
+      root.innerHTML = `
+        <style>p { margin: 0; }</style>
+        <p class="greeting">こんにちは</p>
+        <p class="token">token: in-7f3a</p>
+        <a href="#" class="unsubscribe">配信停止</a>`;
+      root.querySelector(".unsubscribe").addEventListener("click", (e) => {
+        e.preventDefault();
+        show("body-clicked", "clicked: unsubscribe");
+      });
+    }, 500);
+
+    document.getElementById("closed-host").attachShadow({ mode: "closed" }).innerHTML = "<p>closed</p>";
+  </script>
+</body>
+</html>

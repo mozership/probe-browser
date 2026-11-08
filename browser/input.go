@@ -32,8 +32,7 @@ const (
 // Ctrl+A does: an editor such as Lexical keeps its own state, which taking
 // the nodes out from under it would break, and typing over a selection goes
 // through the editor.
-const typePrepareScript = `((sel) => {
-	const el = document.querySelector(sel);
+const typePrepareScript = `((el) => {
 	if (!el) {
 		return "error:no element matched";
 	}
@@ -54,13 +53,13 @@ const typePrepareScript = `((sel) => {
 	return range.collapsed ? "editable-empty" : "editable";
 })(%s)`
 
-// typeText returns an action that waits until sel is visible, then replaces
-// what it holds with value: the value of an input or a textarea, or the
-// content of a contenteditable element.
-func typeText(sel, value string) chromedp.Action[chromedp.Void] {
-	script := fmt.Sprintf(typePrepareScript, jsString(sel))
+// typeText returns an action that waits until the target is visible, then
+// replaces what it holds with value: the value of an input or a textarea,
+// or the content of a contenteditable element.
+func typeText(tg target, value string) chromedp.Action[chromedp.Void] {
+	script := fmt.Sprintf(typePrepareScript, tg.first())
 	return func(ctx context.Context, t *chromedp.Target) (chromedp.Void, error) {
-		if _, err := chromedp.WaitVisible(chromedp.CSS(sel))(ctx, t); err != nil {
+		if _, err := chromedp.WaitVisible(tg.path(), tg.opts()...)(ctx, t); err != nil {
 			return chromedp.Void{}, err
 		}
 		kind, err := chromedp.Evaluate[string](script)(ctx, t)
@@ -69,10 +68,10 @@ func typeText(sel, value string) chromedp.Action[chromedp.Void] {
 		}
 		switch kind {
 		case typeField:
-			if _, err := chromedp.Clear(sel)(ctx, t); err != nil {
+			if _, err := chromedp.Clear(tg.path(), tg.opts()...)(ctx, t); err != nil {
 				return chromedp.Void{}, err
 			}
-			return chromedp.SendKeys(sel, value, chromedp.NodeVisible)(ctx, t)
+			return chromedp.SendKeys(tg.path(), value, tg.opts(chromedp.NodeVisible)...)(ctx, t)
 		case typeEditable, typeEditableEmpty:
 			// The element is focused and its content selected, so the keys go
 			// to it as they are; SendKeys would focus it again and could lose
@@ -83,7 +82,7 @@ func typeText(sel, value string) chromedp.Action[chromedp.Void] {
 			}
 			return chromedp.KeyEvent(keys)(ctx, t)
 		default:
-			return chromedp.Void{}, fmt.Errorf("type %q: %s", sel, strings.TrimPrefix(kind, "error:"))
+			return chromedp.Void{}, fmt.Errorf("type %s: %s", tg, strings.TrimPrefix(kind, "error:"))
 		}
 	}
 }
@@ -144,19 +143,19 @@ func parseKey(s string) (rune, []chromedp.Modifier, error) {
 	return 0, nil, fmt.Errorf("press %q: %q is not a key: give a key name, such as Enter, Tab, Escape or ArrowDown, or a single character", s, name)
 }
 
-// pressKey returns an action that presses key: on sel, once it is visible
-// and focused, or on the element that has the focus when sel is empty.
-func pressKey(sel, key string) (chromedp.Action[chromedp.Void], error) {
+// pressKey returns an action that presses key: on the target, once it is
+// visible and focused, or on the element that has the focus without one.
+func pressKey(tg target, key string) (chromedp.Action[chromedp.Void], error) {
 	r, modifiers, err := parseKey(key)
 	if err != nil {
 		return nil, err
 	}
 	press := chromedp.KeyEvent(string(r), chromedp.KeyModifiers(modifiers...))
-	if sel == "" {
+	if tg.empty() {
 		return press, nil
 	}
 	return func(ctx context.Context, t *chromedp.Target) (chromedp.Void, error) {
-		if _, err := chromedp.Focus(sel, chromedp.NodeVisible)(ctx, t); err != nil {
+		if _, err := chromedp.Focus(tg.path(), tg.opts(chromedp.NodeVisible)...)(ctx, t); err != nil {
 			return chromedp.Void{}, err
 		}
 		return press(ctx, t)
@@ -168,8 +167,7 @@ func pressKey(sel, key string) (chromedp.Action[chromedp.Void], error) {
 // prototype, since React tracks the value the instance's own property was
 // last given, and drops an input event for a value set that way. It returns
 // why it could not, or "" when it did.
-const setValueScript = `((sel, value) => {
-	const el = document.querySelector(sel);
+const setValueScript = `((el, value) => {
 	if (!el) {
 		return "no element matched";
 	}
@@ -192,12 +190,12 @@ const setValueScript = `((sel, value) => {
 	return "";
 })(%s, %s)`
 
-// setValue returns an action that waits until sel is visible, then sets its
-// value to value.
-func setValue(sel, value string) chromedp.Action[chromedp.Void] {
-	script := fmt.Sprintf(setValueScript, jsString(sel), jsString(value))
+// setValue returns an action that waits until the target is visible, then
+// sets its value to value.
+func setValue(tg target, value string) chromedp.Action[chromedp.Void] {
+	script := fmt.Sprintf(setValueScript, tg.first(), jsString(value))
 	return func(ctx context.Context, t *chromedp.Target) (chromedp.Void, error) {
-		if _, err := chromedp.WaitVisible(chromedp.CSS(sel))(ctx, t); err != nil {
+		if _, err := chromedp.WaitVisible(tg.path(), tg.opts()...)(ctx, t); err != nil {
 			return chromedp.Void{}, err
 		}
 		reason, err := chromedp.Evaluate[string](script)(ctx, t)
@@ -205,26 +203,23 @@ func setValue(sel, value string) chromedp.Action[chromedp.Void] {
 			return chromedp.Void{}, err
 		}
 		if reason != "" {
-			return chromedp.Void{}, fmt.Errorf("set_value %q: %s", sel, reason)
+			return chromedp.Void{}, fmt.Errorf("set_value %s: %s", tg, reason)
 		}
 		return chromedp.Void{}, nil
 	}
 }
 
-// visibleCountScript counts the elements matching a selector that are
-// visible, by the test chromedp's wait_visible makes: an element with a
-// size or a box.
-const visibleCountScript = `((sel) => Array.from(document.querySelectorAll(sel)).filter(el =>
-	Boolean(el.offsetWidth || el.offsetHeight || el.getClientRects().length)
-).length)(%s)`
+// visibleCountScript counts the elements of a target that are visible, by
+// the test chromedp's wait_visible makes: an element with a size or a box.
+const visibleCountScript = `((find, els) => els.filter(find.visible).length)(%s, %s)`
 
-// waitNotVisible returns an action that waits until no element matching sel
-// is visible. An element taken out of the page is not visible, so it does
-// not wait for one to be there, as chromedp's WaitNotVisible does.
-func waitNotVisible(sel string) chromedp.Action[chromedp.Void] {
-	script := fmt.Sprintf(visibleCountScript, jsString(sel))
+// waitNotVisible returns an action that waits until no element of the
+// target is visible. An element taken out of the page is not visible, so it
+// does not wait for one to be there, as chromedp's WaitNotVisible does.
+func waitNotVisible(tg target) chromedp.Action[chromedp.Void] {
+	script := fmt.Sprintf(visibleCountScript, findScript, tg.all())
 	return func(ctx context.Context, t *chromedp.Target) (chromedp.Void, error) {
-		return chromedp.Void{}, pollNotVisible(ctx, sel, func(ctx context.Context) (int, error) {
+		return chromedp.Void{}, pollNotVisible(ctx, tg, func(ctx context.Context) (int, error) {
 			return chromedp.Evaluate[int](script)(ctx, t)
 		})
 	}
@@ -233,7 +228,7 @@ func waitNotVisible(sel string) chromedp.Action[chromedp.Void] {
 // pollNotVisible calls count until it returns 0, or ctx ends. An error from
 // count fails at once, since it comes of a selector the page cannot read,
 // which reading again would not mend.
-func pollNotVisible(ctx context.Context, sel string, count func(context.Context) (int, error)) error {
+func pollNotVisible(ctx context.Context, tg target, count func(context.Context) (int, error)) error {
 	last := 0
 	for {
 		n, err := count(ctx)
@@ -243,18 +238,18 @@ func pollNotVisible(ctx context.Context, sel string, count func(context.Context)
 		case err == nil:
 			last = n
 		case ctx.Err() == nil:
-			return fmt.Errorf("wait_not_visible %q: %w", sel, err)
+			return fmt.Errorf("wait_not_visible %s: %w", tg, err)
 		}
 
 		select {
 		case <-ctx.Done():
 			switch last {
 			case 0:
-				return fmt.Errorf("wait_not_visible %q: %w", sel, ctx.Err())
+				return fmt.Errorf("wait_not_visible %s: %w", tg, ctx.Err())
 			case 1:
-				return fmt.Errorf("wait_not_visible %q: an element is still visible: %w", sel, ctx.Err())
+				return fmt.Errorf("wait_not_visible %s: an element is still visible: %w", tg, ctx.Err())
 			default:
-				return fmt.Errorf("wait_not_visible %q: %d elements are still visible: %w", sel, last, ctx.Err())
+				return fmt.Errorf("wait_not_visible %s: %d elements are still visible: %w", tg, last, ctx.Err())
 			}
 		case <-time.After(notVisiblePollInterval):
 		}

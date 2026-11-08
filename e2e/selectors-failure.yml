@@ -1,0 +1,72 @@
+name: Browser Selectors Failure
+description: |
+  Looks for elements by texts the fixture page does not have where a script
+  can reach them, and gives has_text where it does not belong, so that
+  e2e/workflow.yml can check each step fails with the reason.
+  This workflow is expected to fail with action errors.
+actions:
+  browser: ./action
+vars:
+  url: "{{ URL ?? 'http://localhost:8090' }}"
+  evidence_dir: "{{ EVIDENCE_DIR ?? '/tmp/probe-browser-evidence' }}"
+jobs:
+- name: Missing text
+  steps:
+  - name: Waits for a button of a text that is not there
+    uses: browser
+    with:
+      headless: true
+      timeout: 5s
+      evidence_dir: "{{vars.evidence_dir}}"
+      actions:
+      - name: navigate
+        url: "{{vars.url}}/selectors.html"
+      - name: wait_text
+        selector: button
+        has_text: 削除
+        contains: 削除
+    test: res.code == 0
+
+- name: Closed shadow root
+  steps:
+  - name: Waits for a text in a closed shadow root
+    uses: browser
+    with:
+      headless: true
+      timeout: 5s
+      evidence_dir: "{{vars.evidence_dir}}"
+      actions:
+      - name: navigate
+        url: "{{vars.url}}/selectors.html"
+      - name: wait_text
+        selector: "#closed-host"
+        contains: closed
+    test: res.code == 0
+
+- name: has_text without an element
+  steps:
+  - name: Gives has_text to navigate
+    uses: browser
+    with:
+      headless: true
+      timeout: 5s
+      evidence_dir: "{{vars.evidence_dir}}"
+      actions:
+      - name: navigate
+        url: "{{vars.url}}/selectors.html"
+        has_text: Selectors
+    test: res.code == 0
+
+- name: No element
+  steps:
+  - name: Clicks without selector or has_text
+    uses: browser
+    with:
+      headless: true
+      timeout: 5s
+      evidence_dir: "{{vars.evidence_dir}}"
+      actions:
+      - name: navigate
+        url: "{{vars.url}}/selectors.html"
+      - name: click
+    test: res.code == 0

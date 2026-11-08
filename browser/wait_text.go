@@ -131,12 +131,15 @@ func (m *textMatch) String() string {
 	}
 }
 
-// waitText returns an action that reads the visible text of sel until it is
-// the text m expects, and keeps that text in dst.
-func waitText(sel string, m *textMatch, dst *string) chromedp.Action[chromedp.Void] {
+// waitText returns an action that reads the visible text of the target, the
+// text of the shadow roots in it included, until it is the text m expects,
+// and keeps that text in dst.
+func waitText(tg target, m *textMatch, dst *string) chromedp.Action[chromedp.Void] {
 	return func(ctx context.Context, t *chromedp.Target) (chromedp.Void, error) {
-		text, err := pollText(ctx, sel, m, func(ctx context.Context) (string, error) {
-			return chromedp.Text(chromedp.CSS(sel), chromedp.NodeVisible)(ctx, t)
+		text, err := pollText(ctx, tg, m, func(ctx context.Context) (string, error) {
+			var text string
+			_, err := readText(tg, true, &text)(ctx, t)
+			return text, err
 		})
 		if err != nil {
 			return chromedp.Void{}, err
@@ -153,7 +156,7 @@ func waitText(sel string, m *textMatch, dst *string) chromedp.Action[chromedp.Vo
 // it, and the next read finds the new one. When ctx ends, the error gives
 // the last text read, or the last error when no text was, which is what a
 // failure is diagnosed from.
-func pollText(ctx context.Context, sel string, m *textMatch, read func(context.Context) (string, error)) (string, error) {
+func pollText(ctx context.Context, tg target, m *textMatch, read func(context.Context) (string, error)) (string, error) {
 	last, seen := "", false
 	var lastErr error
 	for {
@@ -172,11 +175,11 @@ func pollText(ctx context.Context, sel string, m *textMatch, read func(context.C
 		case <-ctx.Done():
 			switch {
 			case seen:
-				return "", fmt.Errorf("wait_text %q: the text was %q, %s: %w", sel, last, m, ctx.Err())
+				return "", fmt.Errorf("wait_text %s: the text was %q, %s: %w", tg, last, m, ctx.Err())
 			case lastErr != nil:
-				return "", fmt.Errorf("wait_text %q: the text could not be read (%v), %s: %w", sel, lastErr, m, ctx.Err())
+				return "", fmt.Errorf("wait_text %s: the text could not be read (%v), %s: %w", tg, lastErr, m, ctx.Err())
 			default:
-				return "", fmt.Errorf("wait_text %q: no visible element matched, %s: %w", sel, m, ctx.Err())
+				return "", fmt.Errorf("wait_text %s: no visible element matched, %s: %w", tg, m, ctx.Err())
 			}
 		case <-time.After(textPollInterval):
 		}

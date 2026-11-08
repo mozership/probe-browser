@@ -60,7 +60,8 @@ Each entry of `actions` names its action in `name` and takes these fields:
 | `name` | all | The action, from the tables below |
 | `id` | actions that return something | The key for the result in `res.results` or `res.filepaths`. Without it the action's name is the key, so a later action of the same kind replaces the earlier result |
 | `url` | `navigate` | The address to open |
-| `selector` | actions on an element | A CSS selector |
+| `selector` | actions on an element | A CSS selector. It finds elements in open shadow roots too. See [Finding an element](#finding-an-element) |
+| `has_text` | actions on an element | Of the elements `selector` matches, or of all without it, take the innermost whose visible text contains this. See [Finding an element](#finding-an-element) |
 | `value` | `type`, `send_keys`, `press`, `set_value`, `select`, `set_user_verified` | The text to use. Of `press`, the key, as `Enter` or `Shift+Tab`. Of `set_user_verified`, `true` or `false` |
 | `attribute` | `get_attribute` | The attribute to read, as `href` or `[href]`. Of a list, only the first entry is read |
 | `quality` | `full_screenshot` | `1` to `99` saves JPEG at that quality. Anything else, including unset, `0`, `100` and above, or a negative number, saves PNG |
@@ -74,6 +75,27 @@ Each entry of `actions` names its action in `name` and takes these fields:
 A `wait_text` takes at most one of `equals`, `contains`, `not_contains` and `matches`, and no other action takes them. An empty `contains` or `matches` is refused too, since any text would pass it, and so is an empty `not_contains`, since no text would. A workflow that sets them otherwise is refused before the browser starts.
 
 An action that looks for an element waits until the element appears, and the step fails when `timeout` runs out first. Most of them also wait for it to be visible.
+
+### Finding an element
+
+An action on an element takes `selector`, `has_text`, or both, and acts on the first element they match, in document order. An action that needs an element and has neither is refused before the browser starts, and so is `has_text` on an action that acts on no element.
+
+`selector` is a CSS selector, looked for in the document and in every open shadow root, so an element a component renders into its shadow root is found as one outside it is. Each root is matched on its own: `#host p` does not reach a `p` in the shadow root of `#host`, but `p` does. A closed shadow root is out of reach of the page's scripts, and of the action. A `selector` is CSS only: it is not an XPath, and not a text to look for.
+
+`has_text` picks elements by what a user reads on them, so that a step does not depend on the structure of the page:
+
+```yaml
+        - name: click
+          selector: button
+          has_text: リカバリーコード
+        - name: click
+          selector: '[data-slot="dropdown-menu-item"]'
+          has_text: ラベルを削除
+```
+
+It keeps the elements whose visible text contains `has_text`, runs of spaces and line breaks being one space, and of them only the innermost, so that `has_text` alone finds the button rather than the card around it. The text is case-sensitive. A hidden element has no visible text, so it is found only once it is shown.
+
+`text` and `wait_text` read the visible text of the element, and that of the open shadow roots in it, which `innerText` leaves out. So a `wait_text` on the element that holds a message body rendered into a shadow root sees the body.
 
 ### Navigation and waiting
 
@@ -93,8 +115,8 @@ These put a string in `res.results`, under `id` or the action's name.
 
 | Action | Result |
 |--------|--------|
-| `text` | The text content of `selector` |
-| `wait_text` | Waits until `selector` is visible, then its text content. With `equals`, `contains`, `not_contains` or `matches`, it also waits until the text is the one expected. See [Waiting for a text](#waiting-for-a-text) |
+| `text` | The visible text of `selector`, that of the open shadow roots in it included, or an empty string when it is hidden |
+| `wait_text` | Waits until `selector` is visible, then its visible text, as `text` reads it. With `equals`, `contains`, `not_contains` or `matches`, it also waits until the text is the one expected. See [Waiting for a text](#waiting-for-a-text) |
 | `value` | The value of a form field, such as an `input` |
 | `get_attribute` | The first attribute in `attribute` of `selector`, or an empty string when the element does not have it |
 | `get_html` | The outer HTML of `selector`, once it is visible |

@@ -80,7 +80,7 @@ func TestPollText(t *testing.T) {
 			return text, nil
 		}
 
-		got, err := pollText(context.Background(), "#status", &textMatch{equals: "Ready"}, read)
+		got, err := pollText(context.Background(), target{css: "#status"}, &textMatch{equals: "Ready"}, read)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -94,7 +94,7 @@ func TestPollText(t *testing.T) {
 		defer cancel()
 		read := func(context.Context) (string, error) { return "Loading", nil }
 
-		_, err := pollText(ctx, "#status", &textMatch{contains: "Ready"}, read)
+		_, err := pollText(ctx, target{css: "#status"}, &textMatch{contains: "Ready"}, read)
 		if !errors.Is(err, context.DeadlineExceeded) {
 			t.Fatalf("error = %v, want it to wrap the deadline", err)
 		}
@@ -113,7 +113,7 @@ func TestPollText(t *testing.T) {
 			return text, nil
 		}
 
-		got, err := pollText(context.Background(), "#summary", &textMatch{notContains: "Summarizing"}, read)
+		got, err := pollText(context.Background(), target{css: "#summary"}, &textMatch{notContains: "Summarizing"}, read)
 		if err != nil || got != "Three messages about lunch" || calls != 3 {
 			t.Errorf("got %q, %v after %d reads, want the summary after 3", got, err, calls)
 		}
@@ -124,7 +124,7 @@ func TestPollText(t *testing.T) {
 		defer cancel()
 		read := func(context.Context) (string, error) { return "Summarizing", nil }
 
-		_, err := pollText(ctx, "#summary", &textMatch{notContains: "Summarizing"}, read)
+		_, err := pollText(ctx, target{css: "#summary"}, &textMatch{notContains: "Summarizing"}, read)
 		want := `wait_text "#summary": the text was "Summarizing", want it not to contain "Summarizing"`
 		if !errors.Is(err, context.DeadlineExceeded) || !strings.Contains(err.Error(), want) {
 			t.Errorf("error = %v, want it to say %s and wrap the deadline", err, want)
@@ -140,7 +140,7 @@ func TestPollText(t *testing.T) {
 			return "", ctx.Err()
 		}
 
-		_, err := pollText(ctx, "#status", &textMatch{equals: "Ready"}, read)
+		_, err := pollText(ctx, target{css: "#status"}, &textMatch{equals: "Ready"}, read)
 		want := `wait_text "#status": no visible element matched, want "Ready"`
 		if err == nil || !strings.Contains(err.Error(), want) {
 			t.Errorf("error = %v, want it to say %s", err, want)
@@ -159,7 +159,7 @@ func TestPollText(t *testing.T) {
 			return "Ready", nil
 		}
 
-		got, err := pollText(context.Background(), "#status", &textMatch{equals: "Ready"}, read)
+		got, err := pollText(context.Background(), target{css: "#status"}, &textMatch{equals: "Ready"}, read)
 		if err != nil || got != "Ready" {
 			t.Errorf("got %q, %v, want %q", got, err, "Ready")
 		}
@@ -172,7 +172,7 @@ func TestPollText(t *testing.T) {
 			return "", errors.New("could not find node with given id")
 		}
 
-		_, err := pollText(ctx, "#status", &textMatch{equals: "Ready"}, read)
+		_, err := pollText(ctx, target{css: "#status"}, &textMatch{equals: "Ready"}, read)
 		want := `wait_text "#status": the text could not be read (could not find node with given id), want "Ready"`
 		if !errors.Is(err, context.DeadlineExceeded) || !strings.Contains(err.Error(), want) {
 			t.Errorf("error = %v, want it to say %s and wrap the deadline", err, want)
@@ -265,9 +265,9 @@ func TestBuildActionTasks_WaitText(t *testing.T) {
 		action ChromeDPAction
 		tasks  int
 	}{
-		// Without an expected text it waits to be visible, then reads.
-		{"without an expected text", ChromeDPAction{Name: "wait_text", Selector: "h1"}, 2},
-		// With one, a single action waits and reads.
+		// One action waits and reads, to be visible without an expected
+		// text, and until the text is the one expected with one.
+		{"without an expected text", ChromeDPAction{Name: "wait_text", Selector: "h1"}, 1},
 		{"with an expected text", ChromeDPAction{Name: "wait_text", Selector: "h1", Equals: "Hi"}, 1},
 	}
 
