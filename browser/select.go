@@ -33,7 +33,9 @@ const selectScript = `((el, want) => {
 		return "the option " + JSON.stringify(want) + " is disabled";
 	}
 	option.selected = true;
-	el.dispatchEvent(new Event("input", { bubbles: true }));
+	// input is composed and change is not, as those of a user's edit are,
+	// so that the input of a field in a shadow root reaches the page.
+	el.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
 	el.dispatchEvent(new Event("change", { bubbles: true }));
 	return "";
 })(%s, %s)`

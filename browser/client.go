@@ -490,12 +490,15 @@ func (req *Req) buildActionTasks() ([]chromedp.Action[chromedp.Void], error) {
 		case "hover":
 			// The script is a function's, as it runs in the page's global
 			// scope, where a top-level const would clash with the next one.
+			// The event is composed, as a user's is, so that it leaves a
+			// shadow root for the page's listeners outside it.
 			tasks = append(tasks, chromedp.EvaluateAsDevTools[chromedp.Void](fmt.Sprintf(`((el) => {
 				if (el) {
 					const event = new MouseEvent('mouseover', {
 						view: window,
 						bubbles: true,
-						cancelable: true
+						cancelable: true,
+						composed: true
 					});
 					el.dispatchEvent(event);
 				}
@@ -517,6 +520,7 @@ func (req *Req) buildActionTasks() ([]chromedp.Action[chromedp.Void], error) {
 						view: window,
 						bubbles: true,
 						cancelable: true,
+						composed: true,
 						button: 2
 					});
 					el.dispatchEvent(event);

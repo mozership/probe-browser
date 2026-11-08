@@ -72,3 +72,63 @@ jobs:
       res.results.body == "こんにちは\ntoken: in-7f3a\n配信停止" &&
       res.results.token == "token: in-7f3a" &&
       res.results.clicked == "clicked: unsubscribe"
+
+  - name: Find elements in the order of the page, shadow roots included
+    uses: browser
+    with:
+      headless: true
+      timeout: 30s
+      actions:
+      - name: navigate
+        url: "{{vars.url}}/selectors.html"
+      - name: click
+        has_text: Archive
+      - name: text
+        id: archived
+        selector: "#archived"
+      - name: wait_text
+        id: own
+        selector: "#own-host"
+        has_text: Own text
+      - name: text
+        id: inline
+        selector: "#inline-host"
+      - name: text
+        id: hidden
+        selector: "#hidden-host"
+      # The title of the icon is not shown, so the button is the one taken.
+      - name: click
+        has_text: Save
+      - name: text
+        id: saved
+        selector: "#saved"
+    test: |
+      res.code == 0 &&
+      res.results.archived == "archived: shadow" &&
+      res.results.own == "Own text" &&
+      res.results.inline == "Helloworld again" &&
+      res.results.hidden == "" &&
+      res.results.saved == "saved"
+
+  - name: Events in a shadow root reach the page outside it
+    uses: browser
+    with:
+      headless: true
+      timeout: 30s
+      actions:
+      - name: navigate
+        url: "{{vars.url}}/selectors.html"
+      - name: hover
+        selector: .tip
+      - name: right_click
+        selector: .tip
+      - name: set_value
+        selector: .field
+        value: x
+      - name: select
+        selector: .choice
+        value: b
+      - name: text
+        id: events
+        selector: "#events"
+    test: res.code == 0 && res.results.events == "mouseover:tip contextmenu:tip input:field input:choice"

@@ -19,62 +19,103 @@ const selectorRetryInterval = 50 * time.Millisecond
 // it as it is, without leaving anything in the page's global scope.
 //
 //   - all(css, text) gives the elements that match css, in the document and
-//     in every open shadow root, in document order, each shadow root's
-//     after its host. A closed shadow root is out of reach of a script, so
-//     its elements are not found. With text, it keeps those whose visible
-//     text contains text, spaces aside, and of them only the innermost, so
-//     that a button is found rather than the card around it. Without css,
-//     every element is a candidate.
+//     in every open shadow root, in the order of the page, the elements of a
+//     shadow root right after its host. A closed shadow root is out of reach
+//     of a script, so its elements are not found. With text, it keeps those
+//     whose visible text contains text, spaces aside, and of them only the
+//     innermost, so that a button is found rather than the card around it.
+//     Without css, every element is a candidate.
 //   - text(el) gives the visible text of el, as innerText does, and the text
 //     of the open shadow roots in it, which innerText leaves out.
 const findScript = `(() => {
-	const visible = (el) => Boolean(el.offsetWidth || el.offsetHeight || el.getClientRects().length);
+	const box = (el) => Boolean(el.offsetWidth || el.offsetHeight || el.getClientRects().length);
 	const squash = (s) => s.replace(/\s+/g, " ").trim();
-	const skipped = new Set(["SCRIPT", "STYLE", "TEMPLATE", "NOSCRIPT", "HEAD", "TITLE"]);
+	// localName, as the title of an SVG is "title" and not "TITLE".
+	const skipped = new Set(["script", "style", "template", "noscript", "head", "title", "desc"]);
 
-	// hosts gives the elements of root that have an open shadow root, those
-	// in the shadow roots included.
-	const hosts = (root) => {
-		const out = [];
+	// each calls f on the elements of root in the order of the page, those
+	// of a shadow root right after its host.
+	const each = (root, f) => {
 		for (const el of root.querySelectorAll("*")) {
+			f(el);
 			if (el.shadowRoot) {
-				out.push(el, ...hosts(el.shadowRoot));
+				each(el.shadowRoot, f);
 			}
+		}
+	};
+
+	// hosts gives el, when it has an open shadow root, and the elements
+	// under it that have one, those in the shadow roots included.
+	const hosts = (el) => {
+		const out = el.shadowRoot ? [el] : [];
+		each(el.shadowRoot ?? el, (n) => n.shadowRoot && out.push(n));
+		if (el.shadowRoot) {
+			each(el, (n) => n.shadowRoot && out.push(n));
 		}
 		return out;
 	};
 
-	// rendered gives the text of a node of the flat tree: an element's
-	// innerText when no shadow root is under it, and otherwise the text of
-	// its children, those of its shadow root and those slotted into it.
+	const inline = (el) => /^(inline|contents|ruby)/.test(getComputedStyle(el).display);
+
+	// rendered gives the text of a node of the flat tree, with a line break
+	// around each block, as innerText puts them: an element's innerText when
+	// no shadow root is under it, and otherwise the text of the children of
+	// its shadow root, or of its own, and of the nodes slotted into it.
 	const rendered = (node) => {
 		if (node.nodeType === Node.TEXT_NODE) {
-			return node.nodeValue;
+			// A text node in a shadow root takes its style from the host.
+			const parent = node.parentElement ?? node.parentNode?.host;
+			if (!parent || !box(parent)) {
+				return "";
+			}
+			const style = getComputedStyle(parent);
+			if (style.visibility !== "visible") {
+				return "";
+			}
+			return style.whiteSpace.startsWith("pre") ? node.nodeValue : node.nodeValue.replace(/\s+/g, " ");
 		}
-		if (node.nodeType !== Node.ELEMENT_NODE && node.nodeType !== Node.DOCUMENT_FRAGMENT_NODE) {
+		if (node.nodeType !== Node.ELEMENT_NODE || skipped.has(node.localName)) {
 			return "";
 		}
-		if (node.nodeType === Node.ELEMENT_NODE) {
-			if (skipped.has(node.tagName)) {
-				return "";
-			}
-			if (node.tagName === "SLOT") {
-				return node.assignedNodes({ flatten: true }).map(rendered).join("\n");
-			}
-			if (!node.shadowRoot && hosts(node).length === 0) {
-				return visible(node) ? node.innerText : "";
-			}
-			if (!visible(node)) {
-				return "";
-			}
+		if (node.localName === "br") {
+			return "\n";
 		}
-		const children = node.shadowRoot ? node.shadowRoot.childNodes : node.childNodes;
-		return Array.from(children, rendered).join("\n");
+		if (node.localName === "slot") {
+			return node.assignedNodes({ flatten: true }).map(rendered).join("");
+		}
+		if (!box(node)) {
+			return "";
+		}
+		let t;
+		if (hosts(node).length === 0) {
+			t = leaf(node);
+		} else {
+			const children = node.shadowRoot ? node.shadowRoot.childNodes : node.childNodes;
+			t = Array.from(children, rendered).join("");
+		}
+		return inline(node) ? t : "\n" + t + "\n";
+	};
+
+	// leaf gives the visible text of an element with no shadow root under
+	// it. An SVG has no innerText, and shows only the text of its text
+	// elements, not that of its title.
+	const leaf = (el) => {
+		if (el instanceof HTMLElement) {
+			return el.innerText;
+		}
+		if (el instanceof SVGElement) {
+			const texts = el.localName === "text" ? [el] : Array.from(el.querySelectorAll("text"));
+			return texts.map((t) => t.textContent).join(" ");
+		}
+		return el.textContent ?? "";
 	};
 
 	const text = (el) => {
-		if (!el.shadowRoot && hosts(el).length === 0) {
-			return visible(el) ? el.innerText : "";
+		if (!box(el)) {
+			return "";
+		}
+		if (hosts(el).length === 0) {
+			return leaf(el);
 		}
 		// innerText leaves out the shadow roots, so the lines of the parts are
 		// put together the way it would: trimmed, and the empty ones dropped.
@@ -92,8 +133,8 @@ const findScript = `(() => {
 	};
 
 	const all = (css, want) => {
-		const roots = [document, ...hosts(document).map((h) => h.shadowRoot)];
-		let found = roots.flatMap((root) => Array.from(root.querySelectorAll(css || "*")));
+		const found = [];
+		each(document, (el) => (css === "" || el.matches(css)) && found.push(el));
 		if (want === "") {
 			return found;
 		}
@@ -103,11 +144,11 @@ const findScript = `(() => {
 		// blocks, so it is compared without spaces.
 		const bare = needle.replace(/ /g, "");
 		const content = (el) => (el.textContent + hosts(el).map((h) => h.shadowRoot.textContent).join("")).replace(/\s+/g, "");
-		found = found.filter((el) => !skipped.has(el.tagName) && content(el).includes(bare) && squash(text(el)).includes(needle));
-		return found.filter((el) => !found.some((other) => other !== el && contains(el, other)));
+		const matched = found.filter((el) => !skipped.has(el.localName) && content(el).includes(bare) && squash(text(el)).includes(needle));
+		return matched.filter((el) => !matched.some((other) => other !== el && contains(el, other)));
 	};
 
-	return { all, text, visible };
+	return { all, text, visible: box };
 })()`
 
 // target is the element an action acts on: the elements that match a CSS
@@ -163,10 +204,10 @@ func (tg target) opts(extra ...chromedp.QueryOption) []chromedp.QueryOption {
 }
 
 // textScript is a script expression for the visible text of the target's
-// first element, the text of the shadow roots in it included, or "" when no
-// element matches.
+// first element, the text of the shadow roots in it included, or null when
+// no element matches, as when the page has just rendered it again.
 func (tg target) textScript() string {
-	return fmt.Sprintf(`((find, el) => el ? find.text(el) : "")(%s, %s)`, findScript, tg.first())
+	return fmt.Sprintf(`((find, el) => el ? find.text(el) : null)(%s, %s)`, findScript, tg.first())
 }
 
 // elementActions are the actions that act on an element, and so need
@@ -203,16 +244,23 @@ func readText(tg target, visible bool, dst *string) chromedp.Action[chromedp.Voi
 	if visible {
 		wait = chromedp.WaitVisible(tg.path(), tg.opts()...)
 	}
-	read := chromedp.Evaluate[string](tg.textScript())
+	read := chromedp.Evaluate[*string](tg.textScript())
 	return func(ctx context.Context, t *chromedp.Target) (chromedp.Void, error) {
-		if _, err := wait(ctx, t); err != nil {
-			return chromedp.Void{}, err
+		// The element can be gone between the wait and the read, as a page
+		// renders it again. That is not an empty text, which would pass
+		// equals: "" and not_contains, so the wait starts over.
+		for {
+			if _, err := wait(ctx, t); err != nil {
+				return chromedp.Void{}, err
+			}
+			text, err := read(ctx, t)
+			if err != nil {
+				return chromedp.Void{}, err
+			}
+			if text != nil {
+				*dst = *text
+				return chromedp.Void{}, nil
+			}
 		}
-		text, err := read(ctx, t)
-		if err != nil {
-			return chromedp.Void{}, err
-		}
-		*dst = text
-		return chromedp.Void{}, nil
 	}
 }

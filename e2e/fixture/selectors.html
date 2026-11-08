@@ -30,6 +30,30 @@
   <!-- A closed shadow root, which no script outside it can reach. -->
   <div id="closed-host"></div>
 
+  <!-- A button in a shadow root comes before one of the same text after
+       it, in the order of the page. -->
+  <div id="toolbar-host"></div>
+  <button type="button" id="archive-light">Archive</button>
+  <p id="archived">none</p>
+
+  <!-- A host whose text is all in its own shadow root. -->
+  <div id="own-host"></div>
+
+  <!-- Inline elements in a shadow root, which run together on one line. -->
+  <div id="inline-host"></div>
+
+  <!-- A host that is hidden with visibility, which keeps its box. -->
+  <div id="hidden-host" style="visibility: hidden"></div>
+
+  <!-- An icon whose title holds the text of the button after it. -->
+  <svg width="16" height="16"><title>Save</title><rect width="16" height="16"></rect></svg>
+  <button type="button" id="save">Save</button>
+  <p id="saved">none</p>
+
+  <!-- Events in a shadow root that the page listens for outside it. -->
+  <div id="events-host"></div>
+  <p id="events">none</p>
+
   <script>
     const show = (id, text) => { document.getElementById(id).textContent = text; };
     document.querySelectorAll('[data-slot="card-content"] button').forEach((b) => {
@@ -54,6 +78,30 @@
     }, 500);
 
     document.getElementById("closed-host").attachShadow({ mode: "closed" }).innerHTML = "<p>closed</p>";
+
+    const toolbar = document.getElementById("toolbar-host").attachShadow({ mode: "open" });
+    toolbar.innerHTML = `<button type="button">Archive</button>`;
+    toolbar.querySelector("button").addEventListener("click", () => show("archived", "archived: shadow"));
+    document.getElementById("archive-light").addEventListener("click", () => show("archived", "archived: light"));
+
+    document.getElementById("own-host").attachShadow({ mode: "open" }).innerHTML = "Own text";
+    document.getElementById("inline-host").attachShadow({ mode: "open" }).innerHTML = "<span>Hello</span><span>world</span> <b>again</b>";
+    document.getElementById("hidden-host").attachShadow({ mode: "open" }).innerHTML = "Hidden text";
+    document.getElementById("save").addEventListener("click", () => show("saved", "saved"));
+
+    // The page listens on the document, outside the shadow root, as an app
+    // that delegates its events does.
+    const events = document.getElementById("events-host").attachShadow({ mode: "open" });
+    events.innerHTML = `<span class="tip">Tip</span> <input class="field"> <select class="choice"><option>a</option><option>b</option></select>`;
+    const seen = [];
+    for (const type of ["mouseover", "contextmenu", "input"]) {
+      document.addEventListener(type, (e) => {
+        if (e.composedPath()[0].getRootNode() === events) {
+          seen.push(type + ":" + e.composedPath()[0].className);
+          show("events", seen.join(" "));
+        }
+      });
+    }
   </script>
 </body>
 </html>

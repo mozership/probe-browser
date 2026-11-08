@@ -78,7 +78,7 @@ An action that looks for an element waits until the element appears, and the ste
 
 ### Finding an element
 
-An action on an element takes `selector`, `has_text`, or both, and acts on the first element they match, in document order. An action that needs an element and has neither is refused before the browser starts, and so is `has_text` on an action that acts on no element.
+An action on an element takes `selector`, `has_text`, or both, and acts on the first element they match, in the order of the page, where the elements of a shadow root come right after its host. An action that needs an element and has neither is refused before the browser starts, and so is `has_text` on an action that acts on no element.
 
 `selector` is a CSS selector, looked for in the document and in every open shadow root, so an element a component renders into its shadow root is found as one outside it is. Each root is matched on its own: `#host p` does not reach a `p` in the shadow root of `#host`, but `p` does. A closed shadow root is out of reach of the page's scripts, and of the action. A `selector` is CSS only: it is not an XPath, and not a text to look for.
 
@@ -93,7 +93,7 @@ An action on an element takes `selector`, `has_text`, or both, and acts on the f
           has_text: Delete label
 ```
 
-It keeps the elements whose visible text contains `has_text`, runs of spaces and line breaks being one space, and of them only the innermost, so that `has_text` alone finds the button rather than the card around it. The text is case-sensitive. A hidden element has no visible text, so it is found only once it is shown.
+It keeps the elements whose visible text contains `has_text`, runs of spaces and line breaks being one space, and of them only the innermost, so that `has_text` alone finds the button rather than the card around it. The text is case-sensitive. A hidden element has no visible text, so it is found only once it is shown. Of an SVG, only the text it draws counts, not its `<title>`.
 
 `text` and `wait_text` read the visible text of the element, and that of the open shadow roots in it, which `innerText` leaves out. So a `wait_text` on the element that holds a message body rendered into a shadow root sees the body.
 
