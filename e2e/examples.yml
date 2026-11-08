@@ -44,6 +44,11 @@ jobs:
       actions:
       - name: navigate
         url: "{{vars.url}}/"
+      # The page shows Loading at first, so this waits until it is gone.
+      - name: wait_text
+        id: loaded
+        selector: "#status"
+        not_contains: Loading
       - name: wait_text
         id: ready
         selector: "#status"
@@ -58,6 +63,7 @@ jobs:
         matches: '\d+ items$'
     test: |
       res.code == 0 &&
+      res.results.loaded == "Ready: 3 items" &&
       res.results.ready == "Ready: 3 items" &&
       res.results.equal == "Ready: 3 items" &&
       res.results.count == "Ready: 3 items"

@@ -17,13 +17,18 @@ const textPollInterval = 100 * time.Millisecond
 
 // textMatch is the text a wait_text waits for.
 type textMatch struct {
-	equals   string
-	contains string
-	matches  *regexp.Regexp
+	equals      string
+	contains    string
+	notContains string
+	matches     *regexp.Regexp
 }
 
-// markGivenTextFields records, on each action, which of equals, contains and
-// matches the workflow wrote as a string. The mapper leaves a field empty
+// textFieldKeys are the fields of wait_text that say which text it waits
+// for, as the workflow writes them.
+var textFieldKeys = []string{"equals", "contains", "not_contains", "matches"}
+
+// markGivenTextFields records, on each action, which of the text fields the
+// workflow wrote as a string. The mapper leaves a field empty
 // both when it is written as "" and when it is left out, so without this
 // equals: "" would not wait for an empty text but skip the check.
 func markGivenTextFields(data map[string]any, actions []*ChromeDPAction) {
@@ -36,7 +41,7 @@ func markGivenTextFields(data map[string]any, actions []*ChromeDPAction) {
 		if !ok || i >= len(actions) {
 			continue
 		}
-		for _, key := range []string{"equals", "contains", "matches"} {
+		for _, key := range textFieldKeys {
 			if _, isString := action[key].(string); isString {
 				actions[i].given = append(actions[i].given, key)
 			}
@@ -44,12 +49,12 @@ func markGivenTextFields(data map[string]any, actions []*ChromeDPAction) {
 	}
 }
 
-// textFields returns which of equals, contains and matches the action sets:
+// textFields returns which of the text fields the action sets:
 // those not empty, and those the workflow wrote as "".
 func (a *ChromeDPAction) textFields() []string {
 	var fields []string
 	for _, f := range []struct{ key, value string }{
-		{"equals", a.Equals}, {"contains", a.Contains}, {"matches", a.Matches},
+		{"equals", a.Equals}, {"contains", a.Contains}, {"not_contains", a.NotContains}, {"matches", a.Matches},
 	} {
 		if f.value != "" || slices.Contains(a.given, f.key) {
 			fields = append(fields, f.key)
@@ -59,8 +64,8 @@ func (a *ChromeDPAction) textFields() []string {
 }
 
 // textMatch returns what the action's wait_text waits for, or nil when it
-// waits only for the element to be visible. Setting more than one of equals,
-// contains and matches is refused, since a text that meets one of them and
+// waits only for the element to be visible. Setting more than one of the
+// text fields is refused, since a text that meets one of them and
 // not the other would leave which one counts unclear.
 func (a *ChromeDPAction) textMatch() (*textMatch, error) {
 	fields := a.textFields()
@@ -68,7 +73,7 @@ func (a *ChromeDPAction) textMatch() (*textMatch, error) {
 	case len(fields) == 0:
 		return nil, nil
 	case len(fields) > 1:
-		return nil, fmt.Errorf("wait_text takes only one of equals, contains and matches")
+		return nil, fmt.Errorf("wait_text takes only one of equals, contains, not_contains and matches")
 	}
 
 	// An empty contains or matches accepts any text, so the step would pass
@@ -78,13 +83,18 @@ func (a *ChromeDPAction) textMatch() (*textMatch, error) {
 		if a.Contains == "" {
 			return nil, fmt.Errorf("wait_text contains is empty, which any text contains: use equals: \"\" to wait for an empty text")
 		}
+	case "not_contains":
+		// Any text contains "", so the step would wait out its timeout.
+		if a.NotContains == "" {
+			return nil, fmt.Errorf("wait_text not_contains is empty, which every text contains, so it would never pass")
+		}
 	case "matches":
 		if a.Matches == "" {
 			return nil, fmt.Errorf("wait_text matches is empty, which any text matches: use '^$' to wait for an empty text")
 		}
 	}
 
-	m := &textMatch{equals: a.Equals, contains: a.Contains}
+	m := &textMatch{equals: a.Equals, contains: a.Contains, notContains: a.NotContains}
 	if a.Matches != "" {
 		re, err := regexp.Compile(a.Matches)
 		if err != nil {
@@ -101,6 +111,8 @@ func (m *textMatch) ok(text string) bool {
 		return m.matches.MatchString(text)
 	case m.contains != "":
 		return strings.Contains(text, m.contains)
+	case m.notContains != "":
+		return !strings.Contains(text, m.notContains)
 	default:
 		return text == m.equals
 	}
@@ -112,6 +124,8 @@ func (m *textMatch) String() string {
 		return fmt.Sprintf("want it to match %q", m.matches.String())
 	case m.contains != "":
 		return fmt.Sprintf("want it to contain %q", m.contains)
+	case m.notContains != "":
+		return fmt.Sprintf("want it not to contain %q", m.notContains)
 	default:
 		return fmt.Sprintf("want %q", m.equals)
 	}

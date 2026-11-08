@@ -1,8 +1,9 @@
 name: Browser Text Failure Evidence
 description: |
-  Waits for a text the fixture page never shows, so that e2e/workflow.yml can
-  check the step fails with the last text read and the page saved.
-  This workflow is expected to fail with an action error.
+  Waits for a text the fixture page never shows, for one that it never takes
+  away, and for a cookie it never sets, so that e2e/workflow.yml can check
+  each step fails with what it last read and the page saved.
+  This workflow is expected to fail with action errors.
 actions:
   browser: ./action
 vars:
@@ -23,4 +24,35 @@ jobs:
       - name: wait_text
         selector: "#status"
         equals: Done
+    test: res.code == 0
+
+- name: Text that stays
+  steps:
+  - name: Waits for a text to go that never does
+    uses: browser
+    with:
+      headless: true
+      timeout: 5s
+      evidence_dir: "{{vars.evidence_dir}}"
+      actions:
+      - name: navigate
+        url: "{{vars.url}}/"
+      - name: wait_text
+        selector: h1
+        not_contains: Fixture
+    test: res.code == 0
+
+- name: Missing cookie
+  steps:
+  - name: Reads a cookie the page never sets
+    uses: browser
+    with:
+      headless: true
+      timeout: 5s
+      evidence_dir: "{{vars.evidence_dir}}"
+      actions:
+      - name: navigate
+        url: "{{vars.url}}/state.html"
+      - name: get_cookie
+        cookie_name: access_token
     test: res.code == 0

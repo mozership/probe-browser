@@ -30,9 +30,20 @@ jobs:
       - name: wait_text
         selector: "#server"
         equals: "server: s-7"
+      # sid is HttpOnly, out of reach of the page's scripts.
+      - name: get_cookie
+        id: sid
+        cookie_name: sid
+      - name: get_cookie
+        id: session
+        cookie_name: session
       - name: save_storage_state
         id: state
-    test: res.code == 0 && res.filepaths.state endsWith ".json"
+    test: |
+      res.code == 0 &&
+      res.results.sid == "s-7" &&
+      res.results.session == "abc123" &&
+      res.filepaths.state endsWith ".json"
     outputs:
       state: res.filepaths.state
 

@@ -24,6 +24,9 @@ func TestTextMatch(t *testing.T) {
 		{"matches a pattern", ChromeDPAction{Matches: `^\d+ items$`}, "3 items", true},
 		{"matches refuses another text", ChromeDPAction{Matches: `^\d+ items$`}, "no items", false},
 		{"matches an empty text", ChromeDPAction{Matches: `^$`}, "", true},
+		{"not_contains refuses a text with it", ChromeDPAction{NotContains: "Loading"}, "Loading the summary", false},
+		{"not_contains takes a text without it", ChromeDPAction{NotContains: "Loading"}, "The summary", true},
+		{"not_contains takes an empty text", ChromeDPAction{NotContains: "Loading"}, "", true},
 	}
 
 	for _, tc := range testCases {
@@ -52,7 +55,8 @@ func TestTextMatch_Refused(t *testing.T) {
 		action ChromeDPAction
 		want   string
 	}{
-		{"more than one", ChromeDPAction{Equals: "a", Contains: "a"}, "only one of equals, contains and matches"},
+		{"more than one", ChromeDPAction{Equals: "a", Contains: "a"}, "only one of equals, contains, not_contains and matches"},
+		{"contains and not_contains", ChromeDPAction{Contains: "a", NotContains: "b"}, "only one of"},
 		{"a bad pattern", ChromeDPAction{Matches: "("}, "is not a regular expression"},
 	}
 
@@ -97,6 +101,33 @@ func TestPollText(t *testing.T) {
 		want := `wait_text "#status": the text was "Loading", want it to contain "Ready"`
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error = %v, want it to say %s", err, want)
+		}
+	})
+
+	t.Run("waits until a text is gone", func(t *testing.T) {
+		texts := []string{"Summarizing", "Summarizing", "Three messages about lunch"}
+		calls := 0
+		read := func(context.Context) (string, error) {
+			text := texts[min(calls, len(texts)-1)]
+			calls++
+			return text, nil
+		}
+
+		got, err := pollText(context.Background(), "#summary", &textMatch{notContains: "Summarizing"}, read)
+		if err != nil || got != "Three messages about lunch" || calls != 3 {
+			t.Errorf("got %q, %v after %d reads, want the summary after 3", got, err, calls)
+		}
+	})
+
+	t.Run("gives the last text when a text stays", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(context.Background(), 250*time.Millisecond)
+		defer cancel()
+		read := func(context.Context) (string, error) { return "Summarizing", nil }
+
+		_, err := pollText(ctx, "#summary", &textMatch{notContains: "Summarizing"}, read)
+		want := `wait_text "#summary": the text was "Summarizing", want it not to contain "Summarizing"`
+		if !errors.Is(err, context.DeadlineExceeded) || !strings.Contains(err.Error(), want) {
+			t.Errorf("error = %v, want it to say %s and wrap the deadline", err, want)
 		}
 	})
 
@@ -158,6 +189,8 @@ func TestParseData_EmptyTextFields(t *testing.T) {
 		{"equals \"\" waits for an empty text", map[string]any{"name": "wait_text", "selector": "#s", "equals": ""}, ""},
 		{"contains \"\" is refused", map[string]any{"name": "wait_text", "selector": "#s", "contains": ""}, "contains is empty"},
 		{"matches \"\" is refused", map[string]any{"name": "wait_text", "selector": "#s", "matches": ""}, "matches is empty"},
+		{"not_contains \"\" is refused", map[string]any{"name": "wait_text", "selector": "#s", "not_contains": ""}, "not_contains is empty"},
+		{"not_contains on another action is refused", map[string]any{"name": "text", "selector": "#s", "not_contains": "a"}, "text does not take equals, contains, not_contains or matches"},
 		{"equals \"\" with contains is more than one", map[string]any{"name": "wait_text", "selector": "#s", "equals": "", "contains": "a"}, "only one of"},
 		{"equals \"\" on another action is refused", map[string]any{"name": "text", "selector": "#s", "equals": ""}, "text does not take equals"},
 	}
@@ -189,17 +222,18 @@ func TestParseData_EmptyTextFields(t *testing.T) {
 func TestWaitTextActionMapping(t *testing.T) {
 	action := NewChromeDPAction()
 	err := actionrpc.DecodeParams(map[string]any{
-		"name":     "wait_text",
-		"selector": "#status",
-		"equals":   "Ready",
-		"contains": "Rea",
-		"matches":  "^R",
+		"name":         "wait_text",
+		"selector":     "#status",
+		"equals":       "Ready",
+		"contains":     "Rea",
+		"not_contains": "Loading",
+		"matches":      "^R",
 	}, action)
 	if err != nil {
 		t.Fatalf("MapToStructByTags failed: %v", err)
 	}
-	if action.Equals != "Ready" || action.Contains != "Rea" || action.Matches != "^R" {
-		t.Errorf("got equals %q, contains %q, matches %q", action.Equals, action.Contains, action.Matches)
+	if action.Equals != "Ready" || action.Contains != "Rea" || action.NotContains != "Loading" || action.Matches != "^R" {
+		t.Errorf("got equals %q, contains %q, not_contains %q, matches %q", action.Equals, action.Contains, action.NotContains, action.Matches)
 	}
 }
 
@@ -209,7 +243,7 @@ func TestBuildActionTasks_TextMatch(t *testing.T) {
 		action ChromeDPAction
 		want   string
 	}{
-		{"on another action", ChromeDPAction{Name: "text", Selector: "h1", Equals: "Hi"}, "text does not take equals, contains or matches"},
+		{"on another action", ChromeDPAction{Name: "text", Selector: "h1", Equals: "Hi"}, "text does not take equals, contains, not_contains or matches"},
 		{"a bad pattern", ChromeDPAction{Name: "wait_text", Selector: "h1", Matches: "("}, "is not a regular expression"},
 	}
 
