@@ -42,6 +42,10 @@
   <!-- Inline elements in a shadow root, which run together on one line. -->
   <div id="inline-host"></div>
 
+  <!-- A host whose shadow root shows its own children through a slot,
+       inside an element of its own. -->
+  <div id="slot-host"><b>Slotted words</b></div>
+
   <!-- A host that is hidden with visibility, which keeps its box. -->
   <div id="hidden-host" style="visibility: hidden"></div>
 
@@ -86,6 +90,7 @@
 
     document.getElementById("own-host").attachShadow({ mode: "open" }).innerHTML = "Own text";
     document.getElementById("inline-host").attachShadow({ mode: "open" }).innerHTML = "<span>Hello</span><span>world</span> <b>again</b>";
+    document.getElementById("slot-host").attachShadow({ mode: "open" }).innerHTML = "<div>Framed: <slot></slot></div>";
     document.getElementById("hidden-host").attachShadow({ mode: "open" }).innerHTML = "Hidden text";
     document.getElementById("save").addEventListener("click", () => show("saved", "saved"));
 

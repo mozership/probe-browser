@@ -44,23 +44,29 @@ const findScript = `(() => {
 		}
 	};
 
-	// hosts gives el, when it has an open shadow root, and the elements
-	// under it that have one, those in the shadow roots included.
-	const hosts = (el) => {
-		const out = el.shadowRoot ? [el] : [];
-		each(el.shadowRoot ?? el, (n) => n.shadowRoot && out.push(n));
-		if (el.shadowRoot) {
-			each(el, (n) => n.shadowRoot && out.push(n));
+	// flat tells whether el is, or has under it, an element with an open
+	// shadow root or a slot. innerText leaves out the text of a shadow root,
+	// and that of the nodes slotted into a slot, so the text of such an
+	// element is read from the flat tree.
+	const flat = (el) => {
+		if (el.shadowRoot || el.localName === "slot") {
+			return true;
 		}
-		return out;
+		for (const n of el.querySelectorAll("*")) {
+			if (n.shadowRoot || n.localName === "slot") {
+				return true;
+			}
+		}
+		return false;
 	};
 
 	const inline = (el) => /^(inline|contents|ruby)/.test(getComputedStyle(el).display);
 
 	// rendered gives the text of a node of the flat tree, with a line break
 	// around each block, as innerText puts them: an element's innerText when
-	// no shadow root is under it, and otherwise the text of the children of
-	// its shadow root, or of its own, and of the nodes slotted into it.
+	// no shadow root or slot is under it, and otherwise the text of the
+	// children of its shadow root, or of its own, and of the nodes slotted
+	// into it.
 	const rendered = (node) => {
 		if (node.nodeType === Node.TEXT_NODE) {
 			// A text node in a shadow root takes its style from the host.
@@ -87,7 +93,7 @@ const findScript = `(() => {
 			return "";
 		}
 		let t;
-		if (hosts(node).length === 0) {
+		if (!flat(node)) {
 			t = leaf(node);
 		} else {
 			const children = node.shadowRoot ? node.shadowRoot.childNodes : node.childNodes;
@@ -96,8 +102,8 @@ const findScript = `(() => {
 		return inline(node) ? t : "\n" + t + "\n";
 	};
 
-	// leaf gives the visible text of an element with no shadow root under
-	// it. An SVG has no innerText, and shows only the text of its text
+	// leaf gives the visible text of an element with no shadow root or slot
+	// under it. An SVG has no innerText, and shows only the text of its text
 	// elements, not that of its title.
 	const leaf = (el) => {
 		if (el instanceof HTMLElement) {
@@ -114,7 +120,7 @@ const findScript = `(() => {
 		if (!box(el)) {
 			return "";
 		}
-		if (hosts(el).length === 0) {
+		if (!flat(el)) {
 			return leaf(el);
 		}
 		// innerText leaves out the shadow roots, so the lines of the parts are
@@ -141,10 +147,13 @@ const findScript = `(() => {
 		const needle = squash(want);
 		// textContent is read first, as it needs no layout. It holds the
 		// characters of the visible text, but not the line breaks between
-		// blocks, so it is compared without spaces.
+		// blocks, so it is compared without spaces. It holds nothing of a
+		// shadow root, nor of what a slot shows, and the two need not come
+		// in the order the page shows them, so an element of the flat tree
+		// has its text read.
 		const bare = needle.replace(/ /g, "");
-		const content = (el) => (el.textContent + hosts(el).map((h) => h.shadowRoot.textContent).join("")).replace(/\s+/g, "");
-		const matched = found.filter((el) => !skipped.has(el.localName) && content(el).includes(bare) && squash(text(el)).includes(needle));
+		const content = (el) => flat(el) || el.textContent.replace(/\s+/g, "").includes(bare);
+		const matched = found.filter((el) => !skipped.has(el.localName) && content(el) && squash(text(el)).includes(needle));
 		return matched.filter((el) => !matched.some((other) => other !== el && contains(el, other)));
 	};
 

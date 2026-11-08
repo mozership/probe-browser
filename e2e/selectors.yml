@@ -94,6 +94,12 @@ jobs:
         id: inline
         selector: "#inline-host"
       - name: text
+        id: slotted
+        selector: "#slot-host"
+      - name: text
+        id: framed
+        has_text: "Framed: Slotted"
+      - name: text
         id: hidden
         selector: "#hidden-host"
       # The title of the icon is not shown, so the button is the one taken.
@@ -107,6 +113,8 @@ jobs:
       res.results.archived == "archived: shadow" &&
       res.results.own == "Own text" &&
       res.results.inline == "Helloworld again" &&
+      res.results.slotted == "Framed: Slotted words" &&
+      res.results.framed == "Framed: Slotted words" &&
       res.results.hidden == "" &&
       res.results.saved == "saved"
 
