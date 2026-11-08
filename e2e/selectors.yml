@@ -1,0 +1,134 @@
+name: Browser Selectors
+description: |
+  Picks elements by their text, and reads and clicks elements a component
+  renders into its shadow root.
+  Serve the fixture page first, as e2e/workflow.yml does:
+  go run ./e2e/server
+actions:
+  browser: ./action
+vars:
+  url: "{{ URL ?? 'http://localhost:8090' }}"
+jobs:
+- name: Selectors
+  steps:
+  - name: Click buttons by their text
+    uses: browser
+    with:
+      headless: true
+      timeout: 30s
+      actions:
+      - name: navigate
+        url: "{{vars.url}}/selectors.html"
+      - name: click
+        selector: button
+        has_text: リカバリーコード
+      - name: text
+        id: by_selector_and_text
+        selector: "#picked"
+      # Without selector, the innermost element with the text is taken: the
+      # button, rather than the card around it.
+      - name: click
+        has_text: パスキー
+      - name: text
+        id: by_text
+        selector: "#picked"
+      - name: click
+        selector: '[data-slot="dropdown-menu-item"]'
+        has_text: ラベルを削除
+      - name: text
+        id: menu
+        selector: "#menu"
+    test: |
+      res.code == 0 &&
+      res.results.by_selector_and_text == "picked: リカバリーコード" &&
+      res.results.by_text == "picked: パスキー" &&
+      res.results.menu == "menu: ラベルを削除"
+
+  - name: Read and click in a shadow root
+    uses: browser
+    with:
+      headless: true
+      timeout: 30s
+      actions:
+      - name: navigate
+        url: "{{vars.url}}/selectors.html"
+      # The text of the host holds that of its shadow root, which comes a
+      # moment after the page.
+      - name: wait_text
+        id: body
+        selector: '[data-testid="message-body"]'
+        contains: in-7f3a
+      - name: text
+        id: token
+        selector: .token
+      - name: click
+        has_text: 配信停止
+      - name: wait_text
+        id: clicked
+        selector: "#body-clicked"
+        equals: "clicked: unsubscribe"
+    test: |
+      res.code == 0 &&
+      res.results.body == "こんにちは\ntoken: in-7f3a\n配信停止" &&
+      res.results.token == "token: in-7f3a" &&
+      res.results.clicked == "clicked: unsubscribe"
+
+  - name: Find elements in the order of the page, shadow roots included
+    uses: browser
+    with:
+      headless: true
+      timeout: 30s
+      actions:
+      - name: navigate
+        url: "{{vars.url}}/selectors.html"
+      - name: click
+        has_text: Archive
+      - name: text
+        id: archived
+        selector: "#archived"
+      - name: wait_text
+        id: own
+        selector: "#own-host"
+        has_text: Own text
+      - name: text
+        id: inline
+        selector: "#inline-host"
+      - name: text
+        id: hidden
+        selector: "#hidden-host"
+      # The title of the icon is not shown, so the button is the one taken.
+      - name: click
+        has_text: Save
+      - name: text
+        id: saved
+        selector: "#saved"
+    test: |
+      res.code == 0 &&
+      res.results.archived == "archived: shadow" &&
+      res.results.own == "Own text" &&
+      res.results.inline == "Helloworld again" &&
+      res.results.hidden == "" &&
+      res.results.saved == "saved"
+
+  - name: Events in a shadow root reach the page outside it
+    uses: browser
+    with:
+      headless: true
+      timeout: 30s
+      actions:
+      - name: navigate
+        url: "{{vars.url}}/selectors.html"
+      - name: hover
+        selector: .tip
+      - name: right_click
+        selector: .tip
+      - name: set_value
+        selector: .field
+        value: x
+      - name: select
+        selector: .choice
+        value: b
+      - name: text
+        id: events
+        selector: "#events"
+    test: res.code == 0 && res.results.events == "mouseover:tip contextmenu:tip input:field input:choice"

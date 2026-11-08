@@ -136,7 +136,9 @@ jobs:
         selector: "#hide"
       - name: wait_not_visible
         selector: "#panel-body"
+      # body is the body element, though #panel-body, hidden now, has the
+      # word in it.
       - name: get_html
         id: panels
-        selector: "#panels"
+        selector: body
     test: res.code == 0 && res.results.panels contains "panel-body"
