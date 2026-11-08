@@ -22,9 +22,11 @@ const selectorRetryInterval = 50 * time.Millisecond
 //     in every open shadow root, in the order of the page, the elements of a
 //     shadow root right after its host. A closed shadow root is out of reach
 //     of a script, so its elements are not found. With text, it keeps those
-//     whose visible text contains text, spaces aside, and of them only the
-//     innermost, so that a button is found rather than the card around it.
-//     Without css, every element is a candidate.
+//     that have a box and whose visible text contains text, spaces aside, and
+//     of them only the innermost in the flat tree, so that a button is found
+//     rather than the card around it, and an element slotted in rather than
+//     the element of the shadow root around the slot. Without css, every
+//     element is a candidate.
 //   - text(el) gives the visible text of el, as innerText does, and the text
 //     of the open shadow roots in it, which innerText leaves out.
 const findScript = `(() => {
@@ -73,7 +75,8 @@ const findScript = `(() => {
 
 	// shows tells whether el is rendered. An element with display: contents,
 	// as a slot has, has no box of its own but shows what it holds, unless
-	// what holds it is not shown.
+	// what holds it is not shown. An element out of the flat tree, as a child
+	// of a host that no slot shows, has no display, and so no box.
 	const shows = (el) => {
 		const display = getComputedStyle(el).display;
 		if (display === "none") {
@@ -86,11 +89,31 @@ const findScript = `(() => {
 		return p ? shows(p) : true;
 	};
 
-	// Spaces, tabs and line breaks that need no tidying, those of innerText
-	// and of preformatted text, are kept apart while the lines of a text are
-	// tidied, and put back after.
-	const keep = (s) => s.replace(/ /g, "").replace(/\t/g, "").replace(/\n/g, "");
-	const unkeep = (s) => s.replace(//g, " ").replace(//g, "\t").replace(//g, "\n");
+	// The spaces, tabs and line breaks that need no tidying, those of
+	// innerText and of preformatted text, are kept apart as characters of
+	// the private use area while the lines of a text are tidied, and put back
+	// after. Those characters of the page itself are escaped first, so that
+	// they come back as they were.
+	const esc = (s) => s.replace(/[\uE000-\uE003]/g, (c) => "\uE003" + "abcd"[c.charCodeAt(0) - 0xE000]);
+	const keep = (s) => esc(s).replace(/ /g, "\uE000").replace(/\t/g, "\uE001").replace(/\n/g, "\uE002");
+	const unkeep = (s) => s.replace(/\uE000/g, " ").replace(/\uE001/g, "\t").replace(/\uE002/g, "\n")
+		.replace(/\uE003([abcd])/g, (_, c) => String.fromCharCode(0xE000 + "abcd".indexOf(c)));
+
+	// spaced gives the text of a text node as its style shows it: spaces and
+	// line breaks kept, line breaks alone kept, as pre-line does, or both run
+	// together.
+	const spaced = (s, style) => {
+		const collapse = style.whiteSpaceCollapse ||
+			{ pre: "preserve", "pre-wrap": "preserve", "break-spaces": "break-spaces", "pre-line": "preserve-breaks" }[style.whiteSpace] ||
+			"collapse";
+		if (collapse === "preserve" || collapse === "break-spaces" || collapse === "preserve-spaces") {
+			return keep(s);
+		}
+		if (collapse === "preserve-breaks") {
+			return esc(s).replace(/[ \t]*\n[ \t]*/g, "\n").replace(/[ \t]+/g, " ").replace(/\n/g, "\uE002");
+		}
+		return esc(s).replace(/\s+/g, " ");
+	};
 
 	// rendered gives the text of a node of the flat tree, with a line break
 	// around each block, as innerText puts them: an element's innerText when
@@ -107,22 +130,21 @@ const findScript = `(() => {
 			if (style.visibility !== "visible") {
 				return "";
 			}
-			return style.whiteSpace.startsWith("pre") ? keep(node.nodeValue) : node.nodeValue.replace(/\s+/g, " ");
+			return spaced(node.nodeValue, style);
 		}
 		if (node.nodeType !== Node.ELEMENT_NODE || skipped.has(node.localName)) {
 			return "";
 		}
 		if (node.localName === "br") {
-			return "\n";
+			return getComputedStyle(node).display === "none" ? "" : "\n";
 		}
 		if (!shows(node)) {
 			return "";
 		}
-		if (slot(node)) {
-			return node.assignedNodes({ flatten: true }).map(rendered).join("");
-		}
 		let t;
-		if (!flat(node) && getComputedStyle(node).display !== "contents") {
+		if (slot(node)) {
+			t = node.assignedNodes({ flatten: true }).map(rendered).join("");
+		} else if (!flat(node) && getComputedStyle(node).display !== "contents") {
 			t = keep(leaf(node));
 		} else {
 			const children = node.shadowRoot ? node.shadowRoot.childNodes : node.childNodes;
@@ -131,16 +153,47 @@ const findScript = `(() => {
 		return inline(node) ? t : "\n" + t + "\n";
 	};
 
+	// svgText gives the text an SVG shows: that of its text elements, without
+	// those not displayed, the parts hidden, or its title.
+	const svgText = (el) => {
+		const parts = [];
+		const walk = (node, into) => {
+			if (node.nodeType === Node.TEXT_NODE) {
+				if (into && getComputedStyle(node.parentElement).visibility === "visible") {
+					into.push(node.nodeValue);
+				}
+				return;
+			}
+			if (node.nodeType !== Node.ELEMENT_NODE || skipped.has(node.localName) || getComputedStyle(node).display === "none") {
+				return;
+			}
+			if (!into && node.localName === "text") {
+				const text = [];
+				for (const child of node.childNodes) {
+					walk(child, text);
+				}
+				const t = squash(text.join(""));
+				if (t) {
+					parts.push(t);
+				}
+				return;
+			}
+			for (const child of node.childNodes) {
+				walk(child, into);
+			}
+		};
+		walk(el, null);
+		return parts.join(" ");
+	};
+
 	// leaf gives the visible text of an element with no shadow root or slot
-	// under it. An SVG has no innerText, and shows only the text of its text
-	// elements, not that of its title.
+	// under it. An SVG has no innerText.
 	const leaf = (el) => {
 		if (el instanceof HTMLElement) {
 			return el.innerText;
 		}
 		if (el instanceof SVGElement) {
-			const texts = el.localName === "text" ? [el] : Array.from(el.querySelectorAll("text"));
-			return texts.map((t) => t.textContent).join(" ");
+			return svgText(el);
 		}
 		return el.textContent ?? "";
 	};
@@ -184,7 +237,10 @@ const findScript = `(() => {
 		// has its text read.
 		const bare = needle.replace(/ /g, "");
 		const content = (el) => flat(el) || el.textContent.replace(/\s+/g, "").includes(bare);
-		const matched = found.filter((el) => !skipped.has(el.localName) && content(el) && squash(text(el)).includes(needle));
+		// An element with no box, as a slot or another element with display:
+		// contents, is not taken: an action can neither click it nor see it,
+		// and the element around it shows the same text.
+		const matched = found.filter((el) => !skipped.has(el.localName) && box(el) && content(el) && squash(text(el)).includes(needle));
 		return matched.filter((el) => !matched.some((other) => other !== el && contains(el, other)));
 	};
 

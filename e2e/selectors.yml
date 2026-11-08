@@ -126,6 +126,33 @@ jobs:
         id: pre
         selector: "#pre-wrap"
       - name: text
+        id: pre_line
+        selector: "#pre-line-host"
+      - name: text
+        id: break_spaces
+        selector: "#break-spaces-host"
+      - name: text
+        id: private_use
+        selector: "#private-use-host"
+      - name: text
+        id: svg
+        selector: "#svg-host"
+      - name: text
+        id: br
+        selector: "#br-host"
+      - name: text
+        id: block_slot
+        selector: "#block-slot-host"
+      # A slot has no box, so has_text takes the element around it, which an
+      # action can click and see.
+      - name: wait_visible
+        has_text: Fallback words
+      - name: click
+        has_text: Fallback button
+      - name: text
+        id: fallback_clicked
+        selector: "#fallback-clicked"
+      - name: text
         id: hidden
         selector: "#hidden-host"
       # The title of the icon is not shown, so the button is the one taken.
@@ -149,6 +176,13 @@ jobs:
       res.results.light_slot == "Light slot" &&
       res.results.light_slot_text == "Light slot" &&
       res.results.pre == "Shadow\n  indented\n    more" &&
+      res.results.pre_line == "one two\nthree" &&
+      res.results.break_spaces == "a   b" &&
+      res.results.private_use == "icon \uE000\uE001\uE002\uE003 here" &&
+      res.results.svg == "Shown svg AB" &&
+      res.results.br == "OneTwo" &&
+      res.results.block_slot == "Before\nMiddle\nAfter" &&
+      res.results.fallback_clicked == "clicked: fallback" &&
       res.results.hidden == "" &&
       res.results.saved == "saved"
 
