@@ -98,7 +98,7 @@ These put a string in `res.results`, under `id` or the action's name.
 | `value` | The value of a form field, such as an `input` |
 | `get_attribute` | The first attribute in `attribute` of `selector`, or an empty string when the element does not have it |
 | `get_html` | The outer HTML of `selector`, once it is visible |
-| `get_cookie` | The value of the cookie `cookie_name` the browser sends to the page open, HttpOnly ones included. It waits until the page has the cookie, as one set a moment after a sign-in. When `timeout` runs out first, the step fails with the names of the cookies the page has, but not their values. Of two with the name, as for two paths, it gives the one the browser sends first |
+| `get_cookie` | The value of the cookie `cookie_name` the browser sends to the page open, HttpOnly ones included. It waits until the page has the cookie, as one set a moment after a sign-in. When `timeout` runs out first, the step fails with the names of the cookies the page has, but not their values. Of two with the name, it gives the one of the longer path, which the browser sends first; two of one path, which differ in their domains, fail the step, as which the browser sends first cannot be told |
 
 ### Interacting
 

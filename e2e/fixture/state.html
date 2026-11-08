@@ -7,6 +7,7 @@
 <body>
   <h1>Sign in</h1>
   <button id="sign-in" type="button">Sign in</button>
+  <button id="prefs" type="button">Save preferences</button>
   <p id="cookie"></p>
   <p id="token"></p>
   <p id="server"></p>
@@ -27,6 +28,12 @@
       document.cookie = "session=abc123; path=/; max-age=3600";
       localStorage.setItem("token", "t-42");
       await show();
+    });
+    // Two cookies of one name: the one of this page's path is sent first,
+    // though it is set after the one of the whole site.
+    document.getElementById("prefs").addEventListener("click", () => {
+      document.cookie = "pref=site; path=/; max-age=3600";
+      document.cookie = "pref=page; path=/state.html; max-age=3600";
     });
     show();
   </script>

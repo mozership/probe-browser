@@ -87,3 +87,18 @@ jobs:
         selector: "#server"
         equals: "server: nobody"
     test: res.code == 0
+
+  - name: Of two cookies of one name, the one sent first is read
+    uses: browser
+    with:
+      headless: true
+      timeout: 1m
+      actions:
+      - name: navigate
+        url: "{{vars.url}}/state.html"
+      - name: click
+        selector: "#prefs"
+      - name: get_cookie
+        id: pref
+        cookie_name: pref
+    test: res.code == 0 && res.results.pref == "page"

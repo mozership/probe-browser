@@ -24,14 +24,35 @@ func TestPollCookie(t *testing.T) {
 		}
 	})
 
-	t.Run("takes the first of two with the name", func(t *testing.T) {
-		// The browser lists the one of the longer path first, as it sends it.
-		read := func(context.Context) (string, []*network.Cookie, error) {
-			return cookiePage, []*network.Cookie{{Name: "sid", Value: "inner", Path: "/app"}, {Name: "sid", Value: "outer", Path: "/"}}, nil
+	t.Run("takes the one of the longer path of two with the name", func(t *testing.T) {
+		// The browser sends the one of the longer path first, but
+		// Network.getCookies can list the other first, as Chrome does.
+		for _, cookies := range [][]*network.Cookie{
+			{{Name: "sid", Value: "outer", Path: "/"}, {Name: "sid", Value: "inner", Path: "/app"}},
+			{{Name: "sid", Value: "inner", Path: "/app"}, {Name: "sid", Value: "outer", Path: "/"}},
+		} {
+			read := func(context.Context) (string, []*network.Cookie, error) { return cookiePage, cookies, nil }
+			got, err := pollCookie(context.Background(), "sid", read)
+			if err != nil || got != "inner" {
+				t.Errorf("of %v: got %q, %v, want %q", cookies, got, err, "inner")
+			}
 		}
-		got, err := pollCookie(context.Background(), "sid", read)
-		if err != nil || got != "inner" {
-			t.Errorf("got %q, %v, want %q", got, err, "inner")
+	})
+
+	t.Run("refuses two of one path at once", func(t *testing.T) {
+		calls := 0
+		read := func(context.Context) (string, []*network.Cookie, error) {
+			calls++
+			return cookiePage, []*network.Cookie{
+				{Name: "sid", Value: "a", Path: "/", Domain: "localhost"},
+				{Name: "sid", Value: "b", Path: "/app", Domain: "localhost"},
+				{Name: "sid", Value: "c", Path: "/app", Domain: ".localhost"},
+			}, nil
+		}
+		_, err := pollCookie(context.Background(), "sid", read)
+		want := `get_cookie "sid": the page has 2 cookies of the name for the path /app, of the domains ["localhost" ".localhost"]`
+		if err == nil || !strings.Contains(err.Error(), want) || calls != 1 {
+			t.Errorf("error = %v after %d reads, want it to say %s after 1", err, calls, want)
 		}
 	})
 
