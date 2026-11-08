@@ -46,6 +46,20 @@
        inside an element of its own. -->
   <div id="slot-host"><b>Slotted words</b></div>
 
+  <!-- Where a shadow root decides what shows: slots that hide what is
+       slotted into them, an element with display: contents, a slot's own
+       children where nothing is slotted, and a slot outside any shadow
+       root, which is an element like any other. -->
+  <div id="hidden-slot-host">Hidden bare text</div>
+  <div id="none-slot-host">Hidden bare text</div>
+  <div id="contents-host"></div>
+  <div id="fallback-host"></div>
+  <div id="light-slot"><slot>Light slot</slot></div>
+
+  <!-- Preformatted text in an element read from the flat tree. -->
+  <div id="pre-wrap"><span id="pre-shadow"></span><pre>  indented
+    more</pre></div>
+
   <!-- A host that is hidden with visibility, which keeps its box. -->
   <div id="hidden-host" style="visibility: hidden"></div>
 
@@ -91,6 +105,11 @@
     document.getElementById("own-host").attachShadow({ mode: "open" }).innerHTML = "Own text";
     document.getElementById("inline-host").attachShadow({ mode: "open" }).innerHTML = "<span>Hello</span><span>world</span> <b>again</b>";
     document.getElementById("slot-host").attachShadow({ mode: "open" }).innerHTML = "<div>Framed: <slot></slot></div>";
+    document.getElementById("hidden-slot-host").attachShadow({ mode: "open" }).innerHTML = '<slot style="visibility: hidden"></slot>';
+    document.getElementById("none-slot-host").attachShadow({ mode: "open" }).innerHTML = '<div>Shown <slot style="display: none"></slot></div>';
+    document.getElementById("contents-host").attachShadow({ mode: "open" }).innerHTML = '<div style="display: contents"><p>Contents child</p></div>';
+    document.getElementById("fallback-host").attachShadow({ mode: "open" }).innerHTML = "<div><slot>Fallback words</slot></div>";
+    document.getElementById("pre-shadow").attachShadow({ mode: "open" }).innerHTML = "Shadow";
     document.getElementById("hidden-host").attachShadow({ mode: "open" }).innerHTML = "Hidden text";
     document.getElementById("save").addEventListener("click", () => show("saved", "saved"));
 

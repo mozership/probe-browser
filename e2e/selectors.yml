@@ -99,6 +99,32 @@ jobs:
       - name: text
         id: framed
         has_text: "Framed: Slotted"
+      # The innermost element with the text is the one slotted, not the
+      # element of the shadow root that frames it.
+      - name: text
+        id: slotted_only
+        has_text: Slotted words
+      - name: text
+        id: hidden_slot
+        selector: "#hidden-slot-host"
+      - name: text
+        id: none_slot
+        selector: "#none-slot-host"
+      - name: text
+        id: contents
+        selector: "#contents-host"
+      - name: text
+        id: fallback
+        selector: "#fallback-host"
+      - name: text
+        id: light_slot
+        selector: "#light-slot"
+      - name: text
+        id: light_slot_text
+        has_text: Light slot
+      - name: text
+        id: pre
+        selector: "#pre-wrap"
       - name: text
         id: hidden
         selector: "#hidden-host"
@@ -115,6 +141,14 @@ jobs:
       res.results.inline == "Helloworld again" &&
       res.results.slotted == "Framed: Slotted words" &&
       res.results.framed == "Framed: Slotted words" &&
+      res.results.slotted_only == "Slotted words" &&
+      res.results.hidden_slot == "" &&
+      res.results.none_slot == "Shown" &&
+      res.results.contents == "Contents child" &&
+      res.results.fallback == "Fallback words" &&
+      res.results.light_slot == "Light slot" &&
+      res.results.light_slot_text == "Light slot" &&
+      res.results.pre == "Shadow\n  indented\n    more" &&
       res.results.hidden == "" &&
       res.results.saved == "saved"
 

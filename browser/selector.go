@@ -44,16 +44,20 @@ const findScript = `(() => {
 		}
 	};
 
+	// slot tells whether el is a slot of a shadow root. A slot does its work
+	// only there; elsewhere it is an element like any other.
+	const slot = (el) => el.localName === "slot" && el.getRootNode() instanceof ShadowRoot;
+
 	// flat tells whether el is, or has under it, an element with an open
-	// shadow root or a slot. innerText leaves out the text of a shadow root,
-	// and that of the nodes slotted into a slot, so the text of such an
+	// shadow root or a slot of one. innerText leaves out the text of a shadow
+	// root, and that of the nodes slotted into a slot, so the text of such an
 	// element is read from the flat tree.
 	const flat = (el) => {
-		if (el.shadowRoot || el.localName === "slot") {
+		if (el.shadowRoot || slot(el)) {
 			return true;
 		}
 		for (const n of el.querySelectorAll("*")) {
-			if (n.shadowRoot || n.localName === "slot") {
+			if (n.shadowRoot || slot(n)) {
 				return true;
 			}
 		}
@@ -62,23 +66,48 @@ const findScript = `(() => {
 
 	const inline = (el) => /^(inline|contents|ruby)/.test(getComputedStyle(el).display);
 
+	// parent gives the element a node takes its style from in the flat tree:
+	// the slot it is slotted into, its parent, or, at the top of a shadow
+	// root, the host.
+	const parent = (node) => node.assignedSlot ?? node.parentElement ?? node.parentNode?.host ?? null;
+
+	// shows tells whether el is rendered. An element with display: contents,
+	// as a slot has, has no box of its own but shows what it holds, unless
+	// what holds it is not shown.
+	const shows = (el) => {
+		const display = getComputedStyle(el).display;
+		if (display === "none") {
+			return false;
+		}
+		if (display !== "contents") {
+			return box(el);
+		}
+		const p = parent(el);
+		return p ? shows(p) : true;
+	};
+
+	// Spaces, tabs and line breaks that need no tidying, those of innerText
+	// and of preformatted text, are kept apart while the lines of a text are
+	// tidied, and put back after.
+	const keep = (s) => s.replace(/ /g, "").replace(/\t/g, "").replace(/\n/g, "");
+	const unkeep = (s) => s.replace(//g, " ").replace(//g, "\t").replace(//g, "\n");
+
 	// rendered gives the text of a node of the flat tree, with a line break
 	// around each block, as innerText puts them: an element's innerText when
 	// no shadow root or slot is under it, and otherwise the text of the
 	// children of its shadow root, or of its own, and of the nodes slotted
-	// into it.
+	// into it, or a slot's own children where nothing is.
 	const rendered = (node) => {
 		if (node.nodeType === Node.TEXT_NODE) {
-			// A text node in a shadow root takes its style from the host.
-			const parent = node.parentElement ?? node.parentNode?.host;
-			if (!parent || !box(parent)) {
+			const p = parent(node);
+			if (!p || !shows(p)) {
 				return "";
 			}
-			const style = getComputedStyle(parent);
+			const style = getComputedStyle(p);
 			if (style.visibility !== "visible") {
 				return "";
 			}
-			return style.whiteSpace.startsWith("pre") ? node.nodeValue : node.nodeValue.replace(/\s+/g, " ");
+			return style.whiteSpace.startsWith("pre") ? keep(node.nodeValue) : node.nodeValue.replace(/\s+/g, " ");
 		}
 		if (node.nodeType !== Node.ELEMENT_NODE || skipped.has(node.localName)) {
 			return "";
@@ -86,15 +115,15 @@ const findScript = `(() => {
 		if (node.localName === "br") {
 			return "\n";
 		}
-		if (node.localName === "slot") {
-			return node.assignedNodes({ flatten: true }).map(rendered).join("");
-		}
-		if (!box(node)) {
+		if (!shows(node)) {
 			return "";
 		}
+		if (slot(node)) {
+			return node.assignedNodes({ flatten: true }).map(rendered).join("");
+		}
 		let t;
-		if (!flat(node)) {
-			t = leaf(node);
+		if (!flat(node) && getComputedStyle(node).display !== "contents") {
+			t = keep(leaf(node));
 		} else {
 			const children = node.shadowRoot ? node.shadowRoot.childNodes : node.childNodes;
 			t = Array.from(children, rendered).join("");
@@ -117,20 +146,22 @@ const findScript = `(() => {
 	};
 
 	const text = (el) => {
-		if (!box(el)) {
+		if (!shows(el)) {
 			return "";
 		}
-		if (!flat(el)) {
+		if (!flat(el) && getComputedStyle(el).display !== "contents") {
 			return leaf(el);
 		}
-		// innerText leaves out the shadow roots, so the lines of the parts are
-		// put together the way it would: trimmed, and the empty ones dropped.
-		return rendered(el).split("\n").map((l) => l.replace(/[ \t]+/g, " ").trim()).filter((l) => l !== "").join("\n");
+		// The lines of the parts are put together the way innerText would:
+		// spaces run together, trimmed, and the empty lines dropped, what is
+		// kept aside.
+		return unkeep(rendered(el).split("\n").map((l) => l.replace(/[ \t]+/g, " ").trim()).filter((l) => l !== "").join("\n"));
 	};
 
-	// contains tells whether b is under a, across shadow roots.
+	// contains tells whether b is under a in the flat tree, across shadow
+	// roots and into the slot b is slotted into.
 	const contains = (a, b) => {
-		for (let n = b; n; n = n.parentNode ?? n.host) {
+		for (let n = b; n; n = n.assignedSlot ?? n.parentNode ?? n.host) {
 			if (n === a) {
 				return true;
 			}
