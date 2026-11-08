@@ -89,37 +89,84 @@ const findScript = `(() => {
 		return p ? shows(p) : true;
 	};
 
-	// The spaces, tabs and line breaks that need no tidying, those of
-	// innerText and of preformatted text, are kept apart as characters of
-	// the private use area while the lines of a text are tidied, and put back
-	// after. Those characters of the page itself are escaped first, so that
-	// they come back as they were.
-	const esc = (s) => s.replace(/[\uE000-\uE003]/g, (c) => "\uE003" + "abcd"[c.charCodeAt(0) - 0xE000]);
+	// Text read from the flat tree is put together the way innerText puts
+	// it, with characters of the private use area marking what tidy is to
+	// leave or to make into line breaks: a space, a tab and a line break that
+	// are kept as they are (U+E000 to U+E002), a line break of a <br>
+	// (U+E004), and the line breaks around a block (U+E005) and around a
+	// paragraph, which a blank line parts from what is around it (U+E006).
+	// Those characters of the page itself are escaped first, with U+E003, so
+	// that they come back as they were.
+	const marks = "abcdefg";
+	const esc = (s) => s.replace(/[\uE000-\uE006]/g, (c) => "\uE003" + marks[c.charCodeAt(0) - 0xE000]);
 	const keep = (s) => esc(s).replace(/ /g, "\uE000").replace(/\t/g, "\uE001").replace(/\n/g, "\uE002");
-	const unkeep = (s) => s.replace(/\uE000/g, " ").replace(/\uE001/g, "\t").replace(/\uE002/g, "\n")
-		.replace(/\uE003([abcd])/g, (_, c) => String.fromCharCode(0xE000 + "abcd".indexOf(c)));
+	const unkeep = (s) => s.replace(/\uE000/g, " ").replace(/\uE001/g, "\t").replace(/[\uE002\uE004]/g, "\n")
+		.replace(/\uE003([a-g])/g, (_, c) => String.fromCharCode(0xE000 + marks.indexOf(c)));
+
+	// tidy puts a text read from the flat tree together: the spaces of the
+	// texts run together and dropped at the ends of lines, the line breaks
+	// around blocks run together, as many as the most any of them asks for,
+	// and dropped at the ends, and what is kept left as it is.
+	const tidy = (s) => unkeep(s
+		.replace(/ +/g, " ")
+		.replace(/ ?([\uE004-\uE006]) ?/g, "$1")
+		.replace(/[\uE005\uE006]+/g, (run) => (run.includes("\uE006") ? "\n\n" : "\n"))
+		.replace(/^\n+|\n+$/g, "")
+		.replace(/^ | $/g, ""));
+
+	// collapse gives how a style treats the white space of a text.
+	const collapse = (style) => style.whiteSpaceCollapse ||
+		{ pre: "preserve", "pre-wrap": "preserve", "break-spaces": "break-spaces", "pre-line": "preserve-breaks" }[style.whiteSpace] ||
+		"collapse";
+
+	// transformed gives s with the text-transform of style, as innerText
+	// gives it. A word is taken to start where s does.
+	const transformed = (s, style) => {
+		switch (style.textTransform) {
+		case "uppercase":
+			return s.toUpperCase();
+		case "lowercase":
+			return s.toLowerCase();
+		case "capitalize":
+			return s.replace(/(^|[^\p{L}\p{N}'’])(\p{L})/gu, (_, before, letter) => before + letter.toUpperCase());
+		default:
+			return s;
+		}
+	};
 
 	// spaced gives the text of a text node as its style shows it: spaces and
 	// line breaks kept, line breaks alone kept, as pre-line does, or both run
-	// together.
+	// together. Only the white space of CSS runs together, not a no-break
+	// space.
 	const spaced = (s, style) => {
-		const collapse = style.whiteSpaceCollapse ||
-			{ pre: "preserve", "pre-wrap": "preserve", "break-spaces": "break-spaces", "pre-line": "preserve-breaks" }[style.whiteSpace] ||
-			"collapse";
-		if (collapse === "preserve" || collapse === "break-spaces" || collapse === "preserve-spaces") {
+		s = transformed(s, style);
+		const mode = collapse(style);
+		if (mode === "preserve" || mode === "break-spaces" || mode === "preserve-spaces") {
 			return keep(s);
 		}
-		if (collapse === "preserve-breaks") {
-			return esc(s).replace(/[ \t]*\n[ \t]*/g, "\n").replace(/[ \t]+/g, " ").replace(/\n/g, "\uE002");
+		if (mode === "preserve-breaks") {
+			return esc(s).replace(/[ \t\r\f]*\n[ \t\r\f]*/g, "\n").replace(/[ \t\r\f]+/g, " ").replace(/\n/g, "\uE002");
 		}
-		return esc(s).replace(/\s+/g, " ");
+		return esc(s).replace(/[ \t\n\r\f]+/g, " ");
 	};
 
-	// rendered gives the text of a node of the flat tree, with a line break
-	// around each block, as innerText puts them: an element's innerText when
-	// no shadow root or slot is under it, and otherwise the text of the
-	// children of its shadow root, or of its own, and of the nodes slotted
-	// into it, or a slot's own children where nothing is.
+	// kept gives the innerText of an element to put among the texts around
+	// it: kept as it is, but for the spaces at its ends, which run together
+	// with those around it as they do on the screen, unless its style keeps
+	// them.
+	const kept = (t, style) => {
+		if (collapse(style) !== "collapse") {
+			return keep(t);
+		}
+		const [, before, middle, after] = /^( *)([\s\S]*?)( *)$/.exec(t);
+		return before + keep(middle) + after;
+	};
+
+	// rendered gives the text of a node of the flat tree, marked for tidy:
+	// an element's innerText when no shadow root or slot is under it, and
+	// otherwise the text of the children of its shadow root, or of its own,
+	// and of the nodes slotted into it, or a slot's own children where
+	// nothing is.
 	const rendered = (node) => {
 		if (node.nodeType === Node.TEXT_NODE) {
 			const p = parent(node);
@@ -136,31 +183,41 @@ const findScript = `(() => {
 			return "";
 		}
 		if (node.localName === "br") {
-			return getComputedStyle(node).display === "none" ? "" : "\n";
+			return getComputedStyle(node).display === "none" ? "" : "\uE004";
 		}
 		if (!shows(node)) {
 			return "";
 		}
 		let t;
 		if (slot(node)) {
-			t = node.assignedNodes({ flatten: true }).map(rendered).join("");
+			// A slot slotted into another is read as itself, so that its
+			// display counts.
+			const assigned = node.assignedNodes();
+			t = Array.from(assigned.length > 0 ? assigned : node.childNodes, rendered).join("");
 		} else if (!flat(node) && getComputedStyle(node).display !== "contents") {
-			t = keep(leaf(node));
+			t = kept(leaf(node), getComputedStyle(node));
 		} else {
 			const children = node.shadowRoot ? node.shadowRoot.childNodes : node.childNodes;
 			t = Array.from(children, rendered).join("");
 		}
-		return inline(node) ? t : "\n" + t + "\n";
+		// A paragraph is parted by a blank line whatever its display, as
+		// innerText parts it.
+		if (node.localName === "p" && node instanceof HTMLElement) {
+			return "\uE006" + t + "\uE006";
+		}
+		return inline(node) ? t : "\uE005" + t + "\uE005";
 	};
 
-	// svgText gives the text an SVG shows: that of its text elements, without
-	// those not displayed, the parts hidden, or its title.
+	// svgText gives the text an SVG shows: that of its text elements, as
+	// their style shows it, without those not displayed, the parts hidden,
+	// or its title.
 	const svgText = (el) => {
 		const parts = [];
 		const walk = (node, into) => {
 			if (node.nodeType === Node.TEXT_NODE) {
-				if (into && getComputedStyle(node.parentElement).visibility === "visible") {
-					into.push(node.nodeValue);
+				const style = getComputedStyle(node.parentElement);
+				if (into && style.visibility === "visible") {
+					into.push(spaced(node.nodeValue, style));
 				}
 				return;
 			}
@@ -172,7 +229,7 @@ const findScript = `(() => {
 				for (const child of node.childNodes) {
 					walk(child, text);
 				}
-				const t = squash(text.join(""));
+				const t = tidy(text.join(""));
 				if (t) {
 					parts.push(t);
 				}
@@ -205,10 +262,7 @@ const findScript = `(() => {
 		if (!flat(el) && getComputedStyle(el).display !== "contents") {
 			return leaf(el);
 		}
-		// The lines of the parts are put together the way innerText would:
-		// spaces run together, trimmed, and the empty lines dropped, what is
-		// kept aside.
-		return unkeep(rendered(el).split("\n").map((l) => l.replace(/[ \t]+/g, " ").trim()).filter((l) => l !== "").join("\n"));
+		return tidy(rendered(el));
 	};
 
 	// contains tells whether b is under a in the flat tree, across shadow
@@ -240,7 +294,7 @@ const findScript = `(() => {
 		// An element with no box, as a slot or another element with display:
 		// contents, is not taken: an action can neither click it nor see it,
 		// and the element around it shows the same text.
-		const matched = found.filter((el) => !skipped.has(el.localName) && box(el) && content(el) && squash(text(el)).includes(needle));
+		const matched = found.filter((el) => !skipped.has(el.localName) && content(el) && box(el) && squash(text(el)).includes(needle));
 		return matched.filter((el) => !matched.some((other) => other !== el && contains(el, other)));
 	};
 

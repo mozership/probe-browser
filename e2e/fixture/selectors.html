@@ -66,6 +66,17 @@
   <div id="br-host"></div>
   <div id="block-slot-host">Middle</div>
 
+  <!-- Text read from the flat tree as innerText reads it from the document:
+       a blank line around a paragraph and for two line breaks, no-break
+       spaces, a text-transform, spaces at the ends of an inline element, a
+       slot slotted into another, and SVG text that keeps its spaces. -->
+  <div id="paragraphs-host"></div>
+  <div id="nbsp-host"></div>
+  <div id="upper-host" style="text-transform: uppercase"></div>
+  <div id="inline-space-host"></div>
+  <div id="nested-slot-host"></div>
+  <div id="svg-pre-host"></div>
+
   <!-- Text no slot shows: a child of a host whose shadow root has no slot,
        and a slot's own child where a node is slotted in its place. A
        button slotted in shows the slot's own words in place of nothing. -->
@@ -134,6 +145,13 @@
       '<svg width="200" height="40"><text y="20">Shown svg</text><text y="20" display="none">Hidden svg</text><text y="30">A<tspan visibility="hidden">hidden</tspan>B</text></svg>';
     document.getElementById("br-host").attachShadow({ mode: "open" }).innerHTML = 'One<br style="display: none">Two';
     document.getElementById("block-slot-host").attachShadow({ mode: "open" }).innerHTML = 'Before<slot style="display: block"></slot>After';
+    document.getElementById("paragraphs-host").attachShadow({ mode: "open" }).innerHTML = "<p>x</p><p>y</p>One<br><br>Two";
+    document.getElementById("nbsp-host").attachShadow({ mode: "open" }).innerHTML = "a&nbsp;&nbsp;b";
+    document.getElementById("upper-host").attachShadow({ mode: "open" }).textContent = "Save draft";
+    document.getElementById("inline-space-host").attachShadow({ mode: "open" }).innerHTML = "<span>Hello </span> world";
+    document.getElementById("nested-slot-host").attachShadow({ mode: "open" }).innerHTML = 'Before<slot><slot style="display: block">Fallback</slot></slot>After';
+    document.getElementById("svg-pre-host").attachShadow({ mode: "open" }).innerHTML =
+      '<svg width="200" height="30"><text y="20" style="white-space: pre">a   b</text></svg>';
     document.getElementById("unslotted-host").attachShadow({ mode: "open" }).innerHTML = "<p>Shadow only</p>";
     document.getElementById("replaced-host").attachShadow({ mode: "open" }).innerHTML = '<div><slot><span style="display: contents">Fallback hidden</span></slot></div>';
     const fallbackClick = document.getElementById("fallback-click-host").attachShadow({ mode: "open" });

@@ -95,7 +95,7 @@ An action on an element takes `selector`, `has_text`, or both, and acts on the f
 
 It keeps the elements whose visible text contains `has_text`, runs of spaces and line breaks being one space, and of them only the innermost, so that `has_text` alone finds the button rather than the card around it. An element slotted into a component is inside the slot it shows in, and an element with no box of its own, such as a `<slot>`, is not taken, as an action can neither click nor see it. The text is case-sensitive. A hidden element has no visible text, so it is found only once it is shown. Of an SVG, only the text it draws counts, not its `<title>`.
 
-`text` and `wait_text` read the visible text of the element, and that of the open shadow roots in it, with the nodes a slot shows in its place: `innerText` leaves out both. So a `wait_text` on the element that holds a message body rendered into a shadow root sees the body, and `has_text` finds a component by the text it frames around what is slotted into it.
+`text` and `wait_text` read the visible text of the element, and that of the open shadow roots in it, with the nodes a slot shows in its place: `innerText` leaves out both. So a `wait_text` on the element that holds a message body rendered into a shadow root sees the body, and `has_text` finds a component by the text it frames around what is slotted into it. The text of a shadow root is put together as `innerText` puts that of the document: a paragraph is parted from what is around it by a blank line, as a `<br>` makes a line of its own, and spaces run together as the style of the text has them.
 
 ### Navigation and waiting
 
