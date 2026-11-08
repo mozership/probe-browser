@@ -87,10 +87,10 @@ An action on an element takes `selector`, `has_text`, or both, and acts on the f
 ```yaml
         - name: click
           selector: button
-          has_text: リカバリーコード
+          has_text: Recovery codes
         - name: click
           selector: '[data-slot="dropdown-menu-item"]'
-          has_text: ラベルを削除
+          has_text: Delete label
 ```
 
 It keeps the elements whose visible text contains `has_text`, runs of spaces and line breaks being one space, and of them only the innermost, so that `has_text` alone finds the button rather than the card around it. The text is case-sensitive. A hidden element has no visible text, so it is found only once it is shown.
