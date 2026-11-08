@@ -147,12 +147,15 @@ type ChromeDPAction struct {
 	Value     string   `map:"value"`
 	Path      string   `map:"path"` // Deprecated: use FilePath from results
 	Quality   int      `map:"quality"`
-	// Equals, Contains and Matches make wait_text wait until the text is
-	// the one expected, rather than read it once it is visible.
-	Equals   string `map:"equals"`
-	Contains string `map:"contains"`
-	Matches  string `map:"matches"`
-	// given names which of equals, contains and matches the workflow wrote,
+	// Equals, Contains, NotContains and Matches make wait_text wait until
+	// the text is the one expected, rather than read it once it is visible.
+	Equals      string `map:"equals"`
+	Contains    string `map:"contains"`
+	NotContains string `map:"not_contains"`
+	Matches     string `map:"matches"`
+	// CookieName is the cookie get_cookie reads.
+	CookieName string `map:"cookie_name"`
+	// given names which of the text fields the workflow wrote,
 	// since an empty string is otherwise the same as one left out.
 	given      []string
 	reText     *string
@@ -405,7 +408,10 @@ func (req *Req) buildActionTasks() ([]chromedp.Action[chromedp.Void], error) {
 		// Only wait_text waits for a text, so on any other action the fields
 		// would be ignored and a check the workflow asks for would not run.
 		if action.Name != "wait_text" && len(action.textFields()) > 0 {
-			return nil, fmt.Errorf("%s does not take equals, contains or matches: only wait_text does", action.Name)
+			return nil, fmt.Errorf("%s does not take equals, contains, not_contains or matches: only wait_text does", action.Name)
+		}
+		if action.Name != "get_cookie" && action.CookieName != "" {
+			return nil, fmt.Errorf("%s does not take cookie_name: only get_cookie does", action.Name)
 		}
 		switch action.Name {
 		case "navigate":
@@ -513,6 +519,13 @@ func (req *Req) buildActionTasks() ([]chromedp.Action[chromedp.Void], error) {
 					el.dispatchEvent(event);
 				}
 			})()`, jsString(action.Selector))))
+		case "get_cookie":
+			if action.CookieName == "" {
+				return nil, fmt.Errorf("get_cookie needs cookie_name, the name of the cookie to read")
+			}
+			var value string
+			tasks = append(tasks, getCookie(action.CookieName, &value))
+			action.reText = &value
 		case "save_storage_state":
 			var s storageState
 			tasks = append(tasks, saveStorageState(&s))
@@ -557,7 +570,7 @@ func (req *Req) collectResults() (map[string]string, map[string]string, error) {
 
 	for _, action := range req.Actions {
 		switch action.Name {
-		case "text", "value", "get_attribute", "wait_text", "get_html", "wait_passkey":
+		case "text", "value", "get_attribute", "wait_text", "get_html", "wait_passkey", "get_cookie":
 			key := action.Name
 			if action.ID != "" {
 				key = action.ID

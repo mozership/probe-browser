@@ -67,9 +67,11 @@ Each entry of `actions` names its action in `name` and takes these fields:
 | `path` | screenshots, `save_storage_state`, `save_passkeys` | Of a screenshot, deprecated: also write the image to this path; use `res.filepaths` instead. Of `save_storage_state` and `save_passkeys`, where to write the file, in place of a new one in the temporary directory |
 | `equals` | `wait_text` | Wait until the text is exactly this. `equals: ""` waits for an empty text |
 | `contains` | `wait_text` | Wait until the text contains this |
+| `not_contains` | `wait_text` | Wait until the text does not contain this, as when a placeholder such as `Loading` gives way to the content |
 | `matches` | `wait_text` | Wait until the text matches this regular expression, in [Go's syntax](https://pkg.go.dev/regexp/syntax) |
+| `cookie_name` | `get_cookie` | The name of the cookie to read |
 
-A `wait_text` takes at most one of `equals`, `contains` and `matches`, and no other action takes them. An empty `contains` or `matches` is refused too, since any text would pass it. A workflow that sets them otherwise is refused before the browser starts.
+A `wait_text` takes at most one of `equals`, `contains`, `not_contains` and `matches`, and no other action takes them. An empty `contains` or `matches` is refused too, since any text would pass it, and so is an empty `not_contains`, since no text would. A workflow that sets them otherwise is refused before the browser starts.
 
 An action that looks for an element waits until the element appears, and the step fails when `timeout` runs out first. Most of them also wait for it to be visible.
 
@@ -92,10 +94,11 @@ These put a string in `res.results`, under `id` or the action's name.
 | Action | Result |
 |--------|--------|
 | `text` | The text content of `selector` |
-| `wait_text` | Waits until `selector` is visible, then its text content. With `equals`, `contains` or `matches`, it also waits until the text is the one expected. See [Waiting for a text](#waiting-for-a-text) |
+| `wait_text` | Waits until `selector` is visible, then its text content. With `equals`, `contains`, `not_contains` or `matches`, it also waits until the text is the one expected. See [Waiting for a text](#waiting-for-a-text) |
 | `value` | The value of a form field, such as an `input` |
 | `get_attribute` | The first attribute in `attribute` of `selector`, or an empty string when the element does not have it |
 | `get_html` | The outer HTML of `selector`, once it is visible |
+| `get_cookie` | The value of the cookie `cookie_name` the browser sends to the page open, HttpOnly ones included. It waits until the page has the cookie, as one set a moment after a sign-in. When `timeout` runs out first, the step fails with the names of the cookies the page has, but not their values. Of two with the name, it gives the one of the longer path, which the browser sends first; two of one path, which differ in their domains, fail the step, as which the browser sends first cannot be told |
 
 ### Interacting
 
@@ -231,7 +234,7 @@ Give each reading action an `id` so the results do not replace each other.
 
 ### Waiting for a text
 
-A page that fetches its data shows it a moment after it loads, so a `text` read as soon as the element is visible can get `Loading` and fail the test. A `wait_text` with `equals`, `contains` or `matches` reads the text again until it is the one expected.
+A page that fetches its data shows it a moment after it loads, so a `text` read as soon as the element is visible can get `Loading` and fail the test. A `wait_text` with `equals`, `contains`, `not_contains` or `matches` reads the text again until it is the one expected. Of a text that can be anything once it is there, such as a summary a model writes, `not_contains` waits for the placeholder to go.
 
 ```yaml
   - name: Order list
@@ -283,6 +286,28 @@ A search field that submits on Enter, with no button to click:
 ```
 
 A `type` whose `value` ends in `"\r"` presses Enter too, but only in a double-quoted YAML string: unquoted or in single quotes, `\r` is typed as two characters.
+
+### Reading a cookie
+
+A step that signs in can hand the token the app keeps in a cookie to a later step, as to call the app's API as that user, with `get_cookie`:
+
+```yaml
+  - name: Sign up
+    id: signup
+    uses: browser
+    with:
+      timeout: 30s
+      actions:
+        - name: navigate
+          url: "{{vars.url}}/signup"
+        # ... the actions that sign up
+        - name: get_cookie
+          id: token
+          cookie_name: access_token
+    test: res.code == 0
+    outputs:
+      token: res.results.token
+```
 
 ### Carrying a login over
 
@@ -549,7 +574,7 @@ When the actions fail, Probe saves the page as it was at that moment: a full-pag
 action error in step_execute: action execution failed (caused by: ... context deadline exceeded (page at failure: url http://localhost:8090/, screenshot /tmp/probe-browser-failure-1947177907.png, html /tmp/probe-browser-failure-1947177907.html))
 ```
 
-The same message is the failure's `message` in the files `--report` writes. A test that evaluates to false is not an action failure, so the page is not saved then. To have it saved when a text is not the one expected, check the text with a [`wait_text`](#waiting-for-a-text) and `equals`, `contains` or `matches` rather than in `test`, or add a `capture_screenshot` action to keep the page in any case.
+The same message is the failure's `message` in the files `--report` writes. A test that evaluates to false is not an action failure, so the page is not saved then. To have it saved when a text is not the one expected, check the text with a [`wait_text`](#waiting-for-a-text) and `equals`, `contains`, `not_contains` or `matches` rather than in `test`, or add a `capture_screenshot` action to keep the page in any case.
 
 The files go to the system's temporary directory unless `evidence_dir` names another. The directory is created when needed, which suits uploading it as a CI artifact. The page can show private data, so the files are readable only by the user who ran Probe:
 

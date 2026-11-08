@@ -127,7 +127,7 @@ jobs:
       res.stdout contains "html-ok" &&
       res.stdout contains "png-ok"
 
-  - name: A text that never comes fails with the last text read
+  - name: A text or a cookie that never comes fails with what was last read
     uses: shell
     with:
       cmd: |
@@ -142,6 +142,8 @@ jobs:
     test: |
       res.stdout contains "exit=3" &&
       res.stdout contains 'wait_text "#status": the text was "Ready: 3 items", want "Done"' &&
+      res.stdout contains 'wait_text "h1": the text was "Probe Browser Fixture", want it not to contain "Fixture"' &&
+      res.stdout contains 'get_cookie "access_token": the page http://localhost:8090/state.html has no such cookie; the cookies are []' &&
       res.stdout matches "probe-browser-failure-[0-9]+\\.png"
 
   - name: A select that cannot choose fails with the reason
