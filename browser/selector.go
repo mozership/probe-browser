@@ -194,7 +194,10 @@ const findScript = `(() => {
 			// display counts.
 			const assigned = node.assignedNodes();
 			t = Array.from(assigned.length > 0 ? assigned : node.childNodes, rendered).join("");
-		} else if (!flat(node) && getComputedStyle(node).display !== "contents") {
+		} else if (!flat(node) && getComputedStyle(node).display !== "contents" && !node.querySelector("p")) {
+			// The innerText of an element leaves out the blank line of a
+			// paragraph at its start or end, so one that holds a paragraph
+			// is read through.
 			t = kept(leaf(node), getComputedStyle(node));
 		} else {
 			const children = node.shadowRoot ? node.shadowRoot.childNodes : node.childNodes;
@@ -289,8 +292,11 @@ const findScript = `(() => {
 		// shadow root, nor of what a slot shows, and the two need not come
 		// in the order the page shows them, so an element of the flat tree
 		// has its text read.
-		const bare = needle.replace(/ /g, "");
-		const content = (el) => flat(el) || el.textContent.replace(/\s+/g, "").includes(bare);
+		// The case of the characters is left out too, as text-transform
+		// may change it on the screen.
+		const fold = (s) => s.replace(/\s+/g, "").toUpperCase().toLowerCase();
+		const bare = fold(needle);
+		const content = (el) => flat(el) || fold(el.textContent).includes(bare);
 		// An element with no box, as a slot or another element with display:
 		// contents, is not taken: an action can neither click it nor see it,
 		// and the element around it shows the same text.

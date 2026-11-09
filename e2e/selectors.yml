@@ -153,6 +153,9 @@ jobs:
         id: upper
         selector: "#upper-host"
       - name: text
+        id: upper_light
+        has_text: DISCARD DRAFT
+      - name: text
         id: inline_space
         selector: "#inline-space-host"
       - name: text
@@ -201,9 +204,10 @@ jobs:
       res.results.br == "OneTwo" &&
       res.results.block_slot == "Before\nMiddle\nAfter" &&
       res.results.fallback_clicked == "clicked: fallback" &&
-      res.results.paragraphs == "x\n\ny\n\nOne\n\nTwo" &&
+      res.results.paragraphs == "x\n\ny\n\nOne\n\nTwo\n\nz\n\nEnd" &&
       res.results.nbsp == "a\u00a0\u00a0b" &&
       res.results.upper == "SAVE DRAFT" &&
+      res.results.upper_light == "DISCARD DRAFT" &&
       res.results.inline_space == "Hello world" &&
       res.results.nested_slot == "Before\nFallback\nAfter" &&
       res.results.svg_pre == "a   b" &&
