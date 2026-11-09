@@ -50,21 +50,35 @@ const findScript = `(() => {
 	// only there; elsewhere it is an element like any other.
 	const slot = (el) => el.localName === "slot" && el.getRootNode() instanceof ShadowRoot;
 
+	// under tells what el and the elements under it hold that innerText
+	// does not read as the flat tree shows it: an open shadow root or a slot
+	// of one (SHADOW), and a paragraph (PARAGRAPH). It is worked out once for
+	// each element, from what its children hold, and kept for the call, as
+	// the script is run anew for each.
+	const SHADOW = 1;
+	const PARAGRAPH = 2;
+	const held = new WeakMap();
+	const under = (el) => {
+		let m = held.get(el);
+		if (m !== undefined) {
+			return m;
+		}
+		m = (el.shadowRoot || slot(el) ? SHADOW : 0) | (el.localName === "p" && el instanceof HTMLElement ? PARAGRAPH : 0);
+		for (const child of el.children) {
+			m |= under(child);
+		}
+		held.set(el, m);
+		return m;
+	};
+
 	// flat tells whether el is, or has under it, an element with an open
 	// shadow root or a slot of one. innerText leaves out the text of a shadow
 	// root, and that of the nodes slotted into a slot, so the text of such an
 	// element is read from the flat tree.
-	const flat = (el) => {
-		if (el.shadowRoot || slot(el)) {
-			return true;
-		}
-		for (const n of el.querySelectorAll("*")) {
-			if (n.shadowRoot || slot(n)) {
-				return true;
-			}
-		}
-		return false;
-	};
+	const flat = (el) => (under(el) & SHADOW) !== 0;
+
+	// paragraphed tells whether a paragraph is under el.
+	const paragraphed = (el) => Array.prototype.some.call(el.children, (child) => (under(child) & PARAGRAPH) !== 0);
 
 	const inline = (el) => /^(inline|contents|ruby)/.test(getComputedStyle(el).display);
 
@@ -194,7 +208,7 @@ const findScript = `(() => {
 			// display counts.
 			const assigned = node.assignedNodes();
 			t = Array.from(assigned.length > 0 ? assigned : node.childNodes, rendered).join("");
-		} else if (!flat(node) && getComputedStyle(node).display !== "contents" && !node.querySelector("p")) {
+		} else if (!flat(node) && getComputedStyle(node).display !== "contents" && !paragraphed(node)) {
 			// The innerText of an element leaves out the blank line of a
 			// paragraph at its start or end, so one that holds a paragraph
 			// is read through.
