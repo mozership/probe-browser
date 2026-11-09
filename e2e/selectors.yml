@@ -69,7 +69,7 @@ jobs:
         equals: "clicked: unsubscribe"
     test: |
       res.code == 0 &&
-      res.results.body == "こんにちは\ntoken: in-7f3a\n配信停止" &&
+      res.results.body == "こんにちは\n\ntoken: in-7f3a\n\n配信停止" &&
       res.results.token == "token: in-7f3a" &&
       res.results.clicked == "clicked: unsubscribe"
 
@@ -94,6 +94,86 @@ jobs:
         id: inline
         selector: "#inline-host"
       - name: text
+        id: slotted
+        selector: "#slot-host"
+      - name: text
+        id: framed
+        has_text: "Framed: Slotted"
+      # The innermost element with the text is the one slotted, not the
+      # element of the shadow root that frames it.
+      - name: text
+        id: slotted_only
+        has_text: Slotted words
+      - name: text
+        id: hidden_slot
+        selector: "#hidden-slot-host"
+      - name: text
+        id: none_slot
+        selector: "#none-slot-host"
+      - name: text
+        id: contents
+        selector: "#contents-host"
+      - name: text
+        id: fallback
+        selector: "#fallback-host"
+      - name: text
+        id: light_slot
+        selector: "#light-slot"
+      - name: text
+        id: light_slot_text
+        has_text: Light slot
+      - name: text
+        id: pre
+        selector: "#pre-wrap"
+      - name: text
+        id: pre_line
+        selector: "#pre-line-host"
+      - name: text
+        id: break_spaces
+        selector: "#break-spaces-host"
+      - name: text
+        id: private_use
+        selector: "#private-use-host"
+      - name: text
+        id: svg
+        selector: "#svg-host"
+      - name: text
+        id: br
+        selector: "#br-host"
+      - name: text
+        id: block_slot
+        selector: "#block-slot-host"
+      - name: text
+        id: paragraphs
+        selector: "#paragraphs-host"
+      - name: text
+        id: nbsp
+        selector: "#nbsp-host"
+      - name: text
+        id: upper
+        selector: "#upper-host"
+      - name: text
+        id: upper_light
+        has_text: DISCARD DRAFT
+      - name: text
+        id: inline_space
+        selector: "#inline-space-host"
+      - name: text
+        id: nested_slot
+        selector: "#nested-slot-host"
+      - name: text
+        id: svg_pre
+        selector: "#svg-pre-host"
+      # A slot has no box, so has_text takes the element around it, which an
+      # action can click and see.
+      - name: wait_visible
+        has_text: Fallback words
+      - name: click
+        has_text: Fallback button
+      - name: text
+        id: fallback_clicked
+        selector: "#fallback-clicked"
+      - name: text
         id: hidden
         selector: "#hidden-host"
       # The title of the icon is not shown, so the button is the one taken.
@@ -107,6 +187,30 @@ jobs:
       res.results.archived == "archived: shadow" &&
       res.results.own == "Own text" &&
       res.results.inline == "Helloworld again" &&
+      res.results.slotted == "Framed: Slotted words" &&
+      res.results.framed == "Framed: Slotted words" &&
+      res.results.slotted_only == "Slotted words" &&
+      res.results.hidden_slot == "" &&
+      res.results.none_slot == "Shown" &&
+      res.results.contents == "Contents child" &&
+      res.results.fallback == "Fallback words" &&
+      res.results.light_slot == "Light slot" &&
+      res.results.light_slot_text == "Light slot" &&
+      res.results.pre == "Shadow\n  indented\n    more" &&
+      res.results.pre_line == "one two\nthree" &&
+      res.results.break_spaces == "a   b" &&
+      res.results.private_use == "icon \uE000\uE001\uE002\uE003 here" &&
+      res.results.svg == "Shown svg AB" &&
+      res.results.br == "OneTwo" &&
+      res.results.block_slot == "Before\nMiddle\nAfter" &&
+      res.results.fallback_clicked == "clicked: fallback" &&
+      res.results.paragraphs == "x\n\ny\n\nOne\n\nTwo\n\nz\n\nEnd" &&
+      res.results.nbsp == "a\u00a0\u00a0b" &&
+      res.results.upper == "SAVE DRAFT" &&
+      res.results.upper_light == "DISCARD DRAFT" &&
+      res.results.inline_space == "Hello world" &&
+      res.results.nested_slot == "Before\nFallback\nAfter" &&
+      res.results.svg_pre == "a   b" &&
       res.results.hidden == "" &&
       res.results.saved == "saved"
 

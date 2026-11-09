@@ -42,6 +42,55 @@
   <!-- Inline elements in a shadow root, which run together on one line. -->
   <div id="inline-host"></div>
 
+  <!-- A host whose shadow root shows its own children through a slot,
+       inside an element of its own. -->
+  <div id="slot-host"><b>Slotted words</b></div>
+
+  <!-- Where a shadow root decides what shows: slots that hide what is
+       slotted into them, an element with display: contents, a slot's own
+       children where nothing is slotted, and a slot outside any shadow
+       root, which is an element like any other. -->
+  <div id="hidden-slot-host">Hidden bare text</div>
+  <div id="none-slot-host">Hidden bare text</div>
+  <div id="contents-host"></div>
+  <div id="fallback-host"></div>
+  <div id="light-slot"><slot>Light slot</slot></div>
+
+  <!-- Text read from the flat tree as its style shows it, characters of the
+       private use area as an icon font has, an SVG that hides some of its
+       text, a line break not displayed, and a slot displayed as a block. -->
+  <div id="pre-line-host" style="white-space: pre-line"></div>
+  <div id="break-spaces-host" style="white-space: break-spaces"></div>
+  <div id="private-use-host"></div>
+  <div id="svg-host"></div>
+  <div id="br-host"></div>
+  <div id="block-slot-host">Middle</div>
+
+  <!-- Text read from the flat tree as innerText reads it from the document:
+       a blank line around a paragraph and for two line breaks, no-break
+       spaces, a text-transform, spaces at the ends of an inline element, a
+       slot slotted into another, and SVG text that keeps its spaces. -->
+  <div id="paragraphs-host"></div>
+  <div id="nbsp-host"></div>
+  <div id="upper-host" style="text-transform: uppercase"></div>
+  <!-- has_text finds the words as text-transform shows them. -->
+  <span id="upper-light" style="text-transform: uppercase">Discard draft</span>
+  <div id="inline-space-host"></div>
+  <div id="nested-slot-host"></div>
+  <div id="svg-pre-host"></div>
+
+  <!-- Text no slot shows: a child of a host whose shadow root has no slot,
+       and a slot's own child where a node is slotted in its place. A
+       button slotted in shows the slot's own words in place of nothing. -->
+  <div id="unslotted-host"><span style="display: contents">Unslotted words</span></div>
+  <div id="replaced-host"><b>Replacing words</b></div>
+  <div id="fallback-click-host"></div>
+  <p id="fallback-clicked">none</p>
+
+  <!-- Preformatted text in an element read from the flat tree. -->
+  <div id="pre-wrap"><span id="pre-shadow"></span><pre>  indented
+    more</pre></div>
+
   <!-- A host that is hidden with visibility, which keeps its box. -->
   <div id="hidden-host" style="visibility: hidden"></div>
 
@@ -86,6 +135,31 @@
 
     document.getElementById("own-host").attachShadow({ mode: "open" }).innerHTML = "Own text";
     document.getElementById("inline-host").attachShadow({ mode: "open" }).innerHTML = "<span>Hello</span><span>world</span> <b>again</b>";
+    document.getElementById("slot-host").attachShadow({ mode: "open" }).innerHTML = "<div>Framed: <slot></slot></div>";
+    document.getElementById("hidden-slot-host").attachShadow({ mode: "open" }).innerHTML = '<slot style="visibility: hidden"></slot>';
+    document.getElementById("none-slot-host").attachShadow({ mode: "open" }).innerHTML = '<div>Shown <slot style="display: none"></slot></div>';
+    document.getElementById("contents-host").attachShadow({ mode: "open" }).innerHTML = '<div style="display: contents"><p>Contents child</p></div>';
+    document.getElementById("fallback-host").attachShadow({ mode: "open" }).innerHTML = "<div><slot>Fallback words</slot></div>";
+    document.getElementById("pre-line-host").attachShadow({ mode: "open" }).textContent = "one   two\n   three";
+    document.getElementById("break-spaces-host").attachShadow({ mode: "open" }).textContent = "a   b";
+    document.getElementById("private-use-host").attachShadow({ mode: "open" }).textContent = "icon \uE000\uE001\uE002\uE003 here";
+    document.getElementById("svg-host").attachShadow({ mode: "open" }).innerHTML =
+      '<svg width="200" height="40"><text y="20">Shown svg</text><text y="20" display="none">Hidden svg</text><text y="30">A<tspan visibility="hidden">hidden</tspan>B</text></svg>';
+    document.getElementById("br-host").attachShadow({ mode: "open" }).innerHTML = 'One<br style="display: none">Two';
+    document.getElementById("block-slot-host").attachShadow({ mode: "open" }).innerHTML = 'Before<slot style="display: block"></slot>After';
+    document.getElementById("paragraphs-host").attachShadow({ mode: "open" }).innerHTML = "<p>x</p><p>y</p>One<br><br>Two<div><p>z</p></div>End";
+    document.getElementById("nbsp-host").attachShadow({ mode: "open" }).innerHTML = "a&nbsp;&nbsp;b";
+    document.getElementById("upper-host").attachShadow({ mode: "open" }).textContent = "Save draft";
+    document.getElementById("inline-space-host").attachShadow({ mode: "open" }).innerHTML = "<span>Hello </span> world";
+    document.getElementById("nested-slot-host").attachShadow({ mode: "open" }).innerHTML = 'Before<slot><slot style="display: block">Fallback</slot></slot>After';
+    document.getElementById("svg-pre-host").attachShadow({ mode: "open" }).innerHTML =
+      '<svg width="200" height="30"><text y="20" style="white-space: pre">a   b</text></svg>';
+    document.getElementById("unslotted-host").attachShadow({ mode: "open" }).innerHTML = "<p>Shadow only</p>";
+    document.getElementById("replaced-host").attachShadow({ mode: "open" }).innerHTML = '<div><slot><span style="display: contents">Fallback hidden</span></slot></div>';
+    const fallbackClick = document.getElementById("fallback-click-host").attachShadow({ mode: "open" });
+    fallbackClick.innerHTML = "<button type=\"button\"><slot>Fallback button</slot></button>";
+    fallbackClick.querySelector("button").addEventListener("click", () => show("fallback-clicked", "clicked: fallback"));
+    document.getElementById("pre-shadow").attachShadow({ mode: "open" }).innerHTML = "Shadow";
     document.getElementById("hidden-host").attachShadow({ mode: "open" }).innerHTML = "Hidden text";
     document.getElementById("save").addEventListener("click", () => show("saved", "saved"));
 
