@@ -7,6 +7,7 @@
 package storagestate
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -52,11 +53,24 @@ type Item struct {
 	Value string `json:"value"`
 }
 
-// Read reads the state of the file at path.
+// Read reads the state of the file at path. The file has to have cookies
+// and origins, both lists, as Playwright and Save write them, empty or not:
+// a file of another shape, such as one of passkeys, or {}, would otherwise
+// be read as a state of nothing, and a browser would start signed out.
 func Read(path string) (*State, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
+	}
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil || raw == nil {
+		return nil, fmt.Errorf("%s is not a storage state: it is not a JSON object", path)
+	}
+	for _, key := range []string{"cookies", "origins"} {
+		v := bytes.TrimSpace(raw[key])
+		if len(v) == 0 || v[0] != '[' {
+			return nil, fmt.Errorf("%s is not a storage state: it has no list of %s", path, key)
+		}
 	}
 	var s State
 	if err := json.Unmarshal(data, &s); err != nil {

@@ -41,12 +41,36 @@ func TestRead(t *testing.T) {
 	if _, err := Read(filepath.Join(dir, "missing.json")); !errors.Is(err, fs.ErrNotExist) {
 		t.Errorf("a missing file: %v", err)
 	}
-	bad := filepath.Join(dir, "bad.json")
-	if err := os.WriteFile(bad, []byte("cookies"), 0o600); err != nil {
+	empty := filepath.Join(dir, "empty.json")
+	if err := os.WriteFile(empty, []byte(`{"cookies": [], "origins": []}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Read(bad); err == nil || !strings.Contains(err.Error(), "is not a storage state") {
-		t.Errorf("not JSON: %v", err)
+	if s, err := Read(empty); err != nil || len(s.Cookies) != 0 || len(s.Origins) != 0 {
+		t.Errorf("an empty state: %+v, %v", s, err)
+	}
+}
+
+func TestRead_RefusesAnotherShape(t *testing.T) {
+	for _, tc := range []struct{ name, data, want string }{
+		{"not JSON", `cookies`, "it is not a JSON object"},
+		{"null", `null`, "it is not a JSON object"},
+		{"a list", `[]`, "it is not a JSON object"},
+		{"an empty object", `{}`, "it has no list of cookies"},
+		{"passkeys", `{"passkeys": [{"credentialId": "c", "rpId": "localhost"}]}`, "it has no list of cookies"},
+		{"an error", `{"error": "login failed"}`, "it has no list of cookies"},
+		{"no origins", `{"cookies": []}`, "it has no list of origins"},
+		{"null cookies", `{"cookies": null, "origins": []}`, "it has no list of cookies"},
+		{"a cookie of another shape", `{"cookies": [{"name": 1}], "origins": []}`, "is not a storage state"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "state.json")
+			if err := os.WriteFile(path, []byte(tc.data), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := Read(path); err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("error %v, want it to say %q", err, tc.want)
+			}
+		})
 	}
 }
 
