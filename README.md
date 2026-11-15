@@ -2,7 +2,7 @@
 
 A [Probe](https://github.com/mozership/probe) action that drives a real Chrome through [chromedp](https://github.com/chromedp/chromedp): it opens pages, reads and types into them, waits for elements, and takes screenshots. Chrome or Chromium has to be installed where Probe runs.
 
-It was the built-in `browser` action of Probe up to v1.21.0. Probe downloads it the first time a workflow uses it, and it needs Probe v1.21.0 or later, which reads the params its `action.yml` declares for `probe check`.
+It is an [external action](https://probe.linyo.ws/guide/concepts/actions#external-actions), and was the built-in `browser` action of Probe up to v1.21.0. Probe downloads it the first time a workflow uses it, and runs the executable whose SHA-256 the `action.yml` at the pinned commit names. It needs Probe v1.21.0 or later, which reads the params its `action.yml` declares for `probe check`.
 
 A workflow gives the action a name once, under `actions` at its top, and its steps use the name:
 
@@ -375,7 +375,11 @@ A step that signs in can save the login with `save_storage_state`, and the steps
 
 The file holds the cookies of every site the browser has, `HttpOnly` ones included, and the localStorage of the origin of the page open when it is saved; to keep the localStorage of another origin, save the state while a page of it is open. It has the shape of [Playwright's storage state](https://playwright.dev/docs/auth), so that either tool reads what the other writes. [probe-agent](https://github.com/mozership/probe-agent) takes it too, through the package `storagestate`, which other Go tools can use to read, load and save a state.
 
-Before the first action, a browser given `storage_state` takes its cookies, and opens a page of each origin with items in it to write the localStorage there. Those pages are answered with an empty one inside the browser, so they reach no server and run none of the app's scripts, and the browser is back on `about:blank` when the first action runs. A file that is missing, or is not a storage state with a list of `cookies` and one of `origins`, empty or not, fails the step before the browser starts, as when the step that writes it failed, or when the file `save_passkeys` writes is given in its place.
+Before the first action, a browser given `storage_state` takes its cookies, and opens a page of each origin with items in it to write the localStorage there. Those pages are answered with an empty one inside the browser, so they reach no server and run none of the app's scripts, and the browser is back on `about:blank` when the first action runs. A file that is missing, or is not a storage state with a list of `cookies` and one of `origins`, empty or not, fails the step before the browser starts, as when the step that writes it failed, or when the file `save_passkeys` writes is given in its place. The error names what is missing:
+
+```
+storage_state: /tmp/probe-browser-passkeys-123.json is not a storage state: it has no list of cookies
+```
 
 The cookies sign in as the user, so the file is readable only by the user who ran Probe. Without `path` it goes to the temporary directory, which keeps it out of the repository; with `path`, keep it out of version control, and out of the files a CI run uploads.
 
@@ -432,6 +436,11 @@ The authenticator speaks CTAP2 and answers at once, as a user who touches it wou
 A page that registers a passkey can take a moment to say so, as it sends the new credential to its server first. `wait_passkey` waits for the authenticator itself, and says what it did:
 
 ```yaml
+  - name: Register a passkey
+    uses: browser
+    with:
+      timeout: 30s
+      virtual_authenticator: true
       actions:
         - name: navigate
           url: "{{vars.url}}/account/passkeys"
@@ -625,7 +634,7 @@ A CI runner needs a browser and a little more time than a laptop.
 
 ## Guard
 
-The action cannot tell what a page will do, so it keeps to no guard, and its `action.yml` declares none. Under `--read-only` or `--allow-host`, a step that uses it is refused unless `--allow-action` names it.
+The action cannot tell what a page will do, so it keeps to no [guard](https://probe.linyo.ws/guide/concepts/guard), and its `action.yml` declares none. Under `--read-only` or `--allow-host`, a step that uses it is refused unless `--allow-action` names it.
 
 ## Library
 
