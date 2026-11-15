@@ -6,9 +6,9 @@ description: Drive a browser with chromedp
 params: [actions, headless, window_w, window_h, evidence_dir, storage_state, passkeys, timeout, virtual_authenticator]
 runs:
   using: binary
-  url: https://github.com/mozership/probe-browser/releases/download/v0.6.1/probe-browser_{os}_{arch}
+  url: https://github.com/mozership/probe-browser/releases/download/v0.6.2/probe-browser_{os}_{arch}
   checksums:
-    darwin_amd64: "f7cd404222cfc8edf434c8ef3faaef1f4cd729ee188854c0aea54152e3f4bafb"
-    darwin_arm64: "b218acdd1752e386b2080dc9bd633e1b50041220d2dfad8ec9953b4891ff5a68"
-    linux_amd64: "945271a0a411440c0df2806c9872c04f3012430448340e51512579771681e24a"
-    linux_arm64: "9bd74e4c8d60e1bb182b97ff62b3a039fc30adec4c2eaf2596838af241832469"
+    darwin_amd64: "fff84448ddd9319c443a20cce878f9aee3a2830d96a0f8c5996a1903cb35f615"
+    darwin_arm64: "7189e1c923e40c347bf4930824fefb7c415f4474ef65d1284f616dd20b9f37eb"
+    linux_amd64: "216420e0ded7ecf04bfcb90c1bf71670a25729d05939d5a494845070178bd9f0"
+    linux_arm64: "7f111c310feff8cb22443501f168a431939c90a1eb2d0b4e70abf08ba65061f4"
