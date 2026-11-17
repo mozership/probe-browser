@@ -220,11 +220,23 @@ func startGroup(t *testing.T, script string, exit bool, args ...string) int {
 		t.Fatal(err)
 	}
 	pid := cmd.Process.Pid
-	t.Cleanup(func() { _ = syscall.Kill(-pid, syscall.SIGKILL); _ = cmd.Wait() })
+	// The shell is reaped as soon as it exits, as init reaps a kept browser
+	// whose step has exited: on Linux, a zombie left unreaped would keep
+	// its group alive.
+	done := make(chan error, 1)
+	go func() { done <- cmd.Wait() }()
+	t.Cleanup(func() {
+		_ = syscall.Kill(-pid, syscall.SIGKILL)
+		select {
+		case <-done:
+		case <-time.After(5 * time.Second):
+		}
+	})
 	if exit {
-		if err := cmd.Wait(); err != nil {
+		if err := <-done; err != nil {
 			t.Fatal(err)
 		}
+		done <- nil
 	}
 	return pid
 }
