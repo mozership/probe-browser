@@ -59,6 +59,25 @@ type sessionCall struct {
 	pending    []pendingRequest
 	pendingOut []pendingRequest
 	used       bool
+	// stopped is when the step before stopped recording, and stoppedOut
+	// when the step does, for the next, in milliseconds of the Unix
+	// epoch, 0 when not known.
+	stopped, stoppedOut float64
+}
+
+// stoppedFromState reads when the step before stopped recording, as the
+// state of the job names it, 0 when it does not.
+func stoppedFromState(state map[string]any) float64 {
+	// The runner gives a number of no fraction as an int64.
+	switch v := state["network_stopped"].(type) {
+	case float64:
+		return v
+	case int64:
+		return float64(v)
+	case int:
+		return float64(v)
+	}
+	return 0
 }
 
 // pendingFromState reads the requests the state of the job names pending.
@@ -78,9 +97,9 @@ func pendingFromState(state map[string]any) []pendingRequest {
 	return out
 }
 
-// stateWith returns the state of the job that names s, and the requests
-// pending.
-func (s *session) stateWith(pending []pendingRequest) map[string]any {
+// stateWith returns the state of the job that names s, the requests
+// pending, and when the step stopped recording, when known.
+func (s *session) stateWith(pending []pendingRequest, stopped float64) map[string]any {
 	state := s.state()
 	list := make([]any, len(pending))
 	for i, p := range pending {
@@ -90,6 +109,9 @@ func (s *session) stateWith(pending []pendingRequest) map[string]any {
 		list[i] = m
 	}
 	state["pending"] = list
+	if stopped > 0 {
+		state["network_stopped"] = stopped
+	}
 	return state
 }
 

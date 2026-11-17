@@ -169,7 +169,7 @@ func TestStop_APagePollingDoesNotKeepItWaiting(t *testing.T) {
 		}
 	})
 	start := time.Now()
-	r.stop()
+	r.stop(nil, time.Time{})
 	if d := time.Since(start); d > networkDrain+200*time.Millisecond {
 		t.Errorf("stop took %s, want about %s at most", d, networkDrain)
 	}
@@ -222,5 +222,76 @@ func TestDo_NoRequestOfTheStorageState(t *testing.T) {
 	got := ret["res"].(map[string]any)["requests"].(map[string]any)
 	if fmt.Sprint(got["count"]) != "1" || !strings.Contains(fmt.Sprint(got["slowest"]), "/page") {
 		t.Errorf("requests %v, want the page alone", got)
+	}
+}
+
+// TestStop_WaitsForARequestInFlight stops a recorder with a request sent
+// and not ended: it waits for the request to end, and networkSettle at
+// most for one that does not.
+func TestStop_WaitsForARequestInFlight(t *testing.T) {
+	_, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	r := &networkRecorder{cancel: cancel, events: map[string][]jsonv2.Value{}, last: time.Now(), inflight: map[string]bool{}}
+	r.track(network.RequestWillBeSent.Method, jsonv2.Value(`{"requestId":"a","request":{"url":"https://a/form","method":"POST"}}`))
+	r.track(network.RequestWillBeSent.Method, jsonv2.Value(`{"requestId":"d","request":{"url":"data:,x","method":"GET"}}`))
+	go func() {
+		time.Sleep(300 * time.Millisecond)
+		r.mu.Lock()
+		r.track(network.LoadingFinished.Method, jsonv2.Value(`{"requestId":"a","timestamp":2}`))
+		r.last = time.Now()
+		r.mu.Unlock()
+	}()
+	start := time.Now()
+	r.stop(nil, time.Time{})
+	if d := time.Since(start); d < 300*time.Millisecond || d > networkSettle {
+		t.Errorf("stop took %s, want it to wait for the request, which took 300ms", d)
+	}
+
+	_, cancel = context.WithCancel(context.Background())
+	defer cancel()
+	r = &networkRecorder{cancel: cancel, events: map[string][]jsonv2.Value{}, last: time.Now(), inflight: map[string]bool{"s": false}}
+	start = time.Now()
+	r.stop(nil, time.Time{})
+	if d := time.Since(start); d < networkSettle || d > networkSettle+200*time.Millisecond {
+		t.Errorf("stop took %s, want %s, as the request never ends", d, networkSettle)
+	}
+}
+
+// TestStop_WaitsForARequestSentWhileQuiet waits for a request sent while
+// it waits for the events to go quiet, as one a timer of the last action
+// sends.
+func TestStop_WaitsForARequestSentWhileQuiet(t *testing.T) {
+	_, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	r := &networkRecorder{cancel: cancel, events: map[string][]jsonv2.Value{}, last: time.Now(), inflight: map[string]bool{}}
+	go func() {
+		time.Sleep(20 * time.Millisecond)
+		r.mu.Lock()
+		r.track(network.RequestWillBeSent.Method, jsonv2.Value(`{"requestId":"b","request":{"url":"https://a/later","method":"GET"}}`))
+		r.last = time.Now()
+		r.mu.Unlock()
+		time.Sleep(400 * time.Millisecond)
+		r.mu.Lock()
+		r.track(network.LoadingFinished.Method, jsonv2.Value(`{"requestId":"b","timestamp":2}`))
+		r.last = time.Now()
+		r.mu.Unlock()
+	}()
+	start := time.Now()
+	r.stop(nil, time.Time{})
+	if d := time.Since(start); d < 420*time.Millisecond || d > networkSettle {
+		t.Errorf("stop took %s, want it to wait for the request sent while quiet", d)
+	}
+}
+
+// TestStop_NotPastTheDeadline stops waiting for a request in flight at
+// the step's deadline.
+func TestStop_NotPastTheDeadline(t *testing.T) {
+	_, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	r := &networkRecorder{cancel: cancel, events: map[string][]jsonv2.Value{}, last: time.Now(), inflight: map[string]bool{"s": false}}
+	start := time.Now()
+	r.stop(nil, start.Add(300*time.Millisecond))
+	if d := time.Since(start); d > 500*time.Millisecond {
+		t.Errorf("stop took %s, want 300ms, the deadline", d)
 	}
 }

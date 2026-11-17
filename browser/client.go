@@ -917,11 +917,21 @@ func (req *Req) do() (*Result, error) {
 	// starts among the tasks, once the browser is set up.
 	if _, ok := req.browserRunner.(*ChromeDPRunner); ok {
 		var pending []pendingRequest
+		var since float64
 		if req.attaches() {
-			pending = req.session.pending
+			pending, since = req.session.pending, req.session.stopped
 		}
 		start := func(ctx context.Context, t *chromedp.Target) (chromedp.Void, error) {
-			net = recordNetwork(browserCtx, pending)
+			net = recordNetwork(browserCtx, pending, since)
+			if net == nil || !req.Session {
+				return chromedp.Void{}, nil
+			}
+			// The page's timings as the step begins, which tell what
+			// ended since the step before, whatever the actions do to the
+			// page. Each document the page opens while the step is
+			// attached keeps more of them.
+			_, _ = chromedp.Call(ctx, page.AddScriptToEvaluateOnNewDocument, page.AddScriptToEvaluateOnNewDocumentParams{Source: timingBuffer})
+			net.first = readTimings(ctx, t)
 			return chromedp.Void{}, nil
 		}
 		tasks = slices.Insert(tasks, min(req.recordFrom, len(tasks)), chromedp.Action[chromedp.Void](start))
@@ -936,15 +946,28 @@ func (req *Req) do() (*Result, error) {
 	if req.Session && (req.OneTab || req.attaches()) {
 		_ = req.browserRunner.Run(browserCtx, oneTabDone(req.oneTabScript))
 	}
+	// The page's timings are read of a kept browser, whose steps leave
+	// what ends between them.
+	var timings func() *pageTimings
+	if req.Session {
+		timings = func() *pageTimings {
+			var got *pageTimings
+			_ = req.browserRunner.Run(browserCtx, func(ctx context.Context, t *chromedp.Target) (chromedp.Void, error) {
+				got = readTimings(ctx, t)
+				return chromedp.Void{}, nil
+			})
+			return got
+		}
+	}
 	if err != nil {
 		errs := console.stop(browserCtx, req.browserRunner.Run)
-		netErrs, _, _ := net.stop()
+		netErrs, _, _, _ := net.stop(timings, deadline)
 		return nil, req.withEvidence(browserCtx, withNetworkErrors(withConsoleErrors(err, errs), netErrs))
 	}
 	consoleErrors := console.stop(browserCtx, req.browserRunner.Run)
-	networkErrors, requests, pending := net.stop()
+	networkErrors, requests, pending, stopped := net.stop(timings, deadline)
 	if req.Session && req.session != nil {
-		req.session.used, req.session.pendingOut = true, pending
+		req.session.used, req.session.pendingOut, req.session.stoppedOut = true, pending, stopped
 	}
 
 	results, filePaths, err := req.collectResults()
