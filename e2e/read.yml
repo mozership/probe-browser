@@ -56,3 +56,46 @@ jobs:
       res.code == 0 &&
       outputs.heading matches '^ref_[a-z]{4}1$' &&
       res.results.heading == 'heading "Probe Browser Fixture" level=1 [' + outputs.heading + ']'
+
+- name: Act on refs
+  steps:
+  - name: Read the fields one can act on
+    uses: browser
+    with:
+      headless: true
+      session: true
+      timeout: 30s
+      actions:
+      - name: navigate
+        url: "{{vars.url}}/input.html"
+      - name: read_page
+        id: outline
+        filter: interactive
+    test: res.code == 0 && res.results.outline contains 'textbox "q" value="old"'
+    outputs:
+      q: res.results.outline | split("\n") | filter(# startsWith 'textbox "q"') | first() | split("[") | last() | trimSuffix("]")
+      close: res.results.outline | split("\n") | filter(# startsWith 'button "Close"') | first() | split("[") | last() | trimSuffix("]")
+
+  - name: The next step types into a field and clicks a button by their refs
+    uses: browser
+    with:
+      session: true
+      timeout: 30s
+      actions:
+      - name: type
+        ref: "{{outputs.q}}"
+        value: new
+      - name: press
+        ref: "{{outputs.q}}"
+        value: Enter
+      - name: wait_text
+        selector: "#searched"
+        equals: "searched: new"
+      - name: value
+        id: q
+        ref: "{{outputs.q}}"
+      - name: click
+        ref: "{{outputs.close}}"
+      - name: wait_not_visible
+        selector: "#panel"
+    test: res.code == 0 && res.results.q == "new"

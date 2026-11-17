@@ -479,13 +479,18 @@ func (req *Req) buildActionTasks() ([]chromedp.Action[chromedp.Void], error) {
 		if action.Name != "get_cookie" && action.CookieName != "" {
 			return nil, fmt.Errorf("%s does not take cookie_name: only get_cookie does", action.Name)
 		}
-		if action.Name != "read_page" && (action.Filter != "" || action.Depth != 0 || action.Ref != "") {
-			return nil, fmt.Errorf("%s does not take filter, depth or ref: only read_page does", action.Name)
+		if action.Name != "read_page" && (action.Filter != "" || action.Depth != 0) {
+			return nil, fmt.Errorf("%s does not take filter or depth: only read_page does", action.Name)
+		}
+		if action.Name != "read_page" && !elementActions[action.Name] && action.Ref != "" {
+			return nil, fmt.Errorf("%s does not take ref, as it acts on no element", action.Name)
 		}
 		tg := action.target()
 		if err := action.checkTarget(); err != nil {
 			return nil, err
 		}
+		// The tasks of the action, guarded below when it acts on a ref.
+		first := len(tasks)
 		switch action.Name {
 		case "navigate":
 			tasks = append(tasks, chromedp.Navigate(action.URL))
@@ -642,6 +647,13 @@ func (req *Req) buildActionTasks() ([]chromedp.Action[chromedp.Void], error) {
 			tasks = append(tasks, setUserVerified(va, verified))
 		default:
 			return nil, fmt.Errorf("unsupported action type: %s", action.Name)
+		}
+		// wait_not_visible waits for the element to go, which is not a ref
+		// gone wrong.
+		if tg.ref != "" && action.Name != "wait_not_visible" {
+			for i := first; i < len(tasks); i++ {
+				tasks[i] = guardRef(tg.ref, tasks[i])
+			}
 		}
 	}
 

@@ -1,7 +1,8 @@
 // The outline of a page, as probe-browser's read_page and page_text read it.
 // It came from probe-agent, which shows the outline to its tester, and so it
-// also finds the element of a ref for a tool that acts on it: point,
-// scrollTo, focus, formInput, locator and locate. It is evaluated in the
+// also finds the element of a ref for a tool that acts on it: element, as
+// probe-browser's actions on a ref find it, and point, scrollTo, focus,
+// formInput, locator and locate. It is evaluated in the
 // document, and installs window.__probeOutline once. It tells what the page
 // has as lines that each end with a ref, such as
 //
@@ -656,6 +657,6 @@
     return f(...args);
   };
   window.__probeOutline = Object.fromEntries(Object.entries({
-    read, point, scrollTo, focus, formInput, text, locator, locate, alerts,
+    read, point, scrollTo, focus, formInput, text, locator, locate, alerts, element: byRef,
   }).map(([name, f]) => [name, fresh(f)]));
 })();

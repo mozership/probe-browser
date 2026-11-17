@@ -1,0 +1,40 @@
+name: Browser Ref Failure
+description: |
+  Acts on a ref the page no longer has, which fails at once with what to
+  do, rather than waiting for the element until the timeout. e2e/workflow.yml
+  runs it and checks what it says.
+  Serve the fixture page first, as e2e/workflow.yml does:
+  go run ./e2e/server
+actions:
+  browser: ./action
+vars:
+  url: "{{ URL ?? 'http://localhost:8090' }}"
+jobs:
+- name: A ref of the page before
+  steps:
+  - name: Read the fixture page
+    uses: browser
+    with:
+      headless: true
+      session: true
+      timeout: 30s
+      actions:
+      - name: navigate
+        url: "{{vars.url}}/"
+      - name: read_page
+        id: outline
+    test: res.code == 0
+    outputs:
+      heading: res.results.outline | split("\n") | filter(# startsWith "heading") | first() | split("[") | last() | trimSuffix("]")
+
+  - name: Click the heading's ref on the next page
+    uses: browser
+    with:
+      session: true
+      timeout: 20s
+      actions:
+      - name: navigate
+        url: "{{vars.url}}/input.html"
+      - name: click
+        ref: "{{outputs.heading}}"
+    test: res.code == 0

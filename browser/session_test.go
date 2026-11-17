@@ -1,6 +1,7 @@
 package browser
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -13,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/chromedp/chromedp"
 	"github.com/hashicorp/go-hclog"
 	"github.com/mozership/probe/actionrpc"
 )
@@ -110,7 +112,10 @@ func TestRunStep_KeepsTheBrowser(t *testing.T) {
 	procs := &actionrpc.Processes{}
 	call := func(state map[string]any, actions ...any) (map[string]any, map[string]any, error) {
 		return a.RunStep(actionrpc.Call{
-			With:      map[string]any{"session": true, "headless": true, "timeout": "20s", "actions": actions},
+			// A runner of CI under -race can take more than 20 seconds to
+			// start the browser and fill the field. The page is saved in
+			// the test's directory when the step fails.
+			With:      map[string]any{"session": true, "headless": true, "timeout": "60s", "evidence_dir": t.TempDir(), "actions": actions},
 			State:     state,
 			Step:      actionrpc.Step{RunID: run},
 			Cleanups:  &actionrpc.Cleanups{},
@@ -305,5 +310,102 @@ func TestCleanupSessions_FindsABrowserWithoutItsPIDFile(t *testing.T) {
 	}
 	if _, err := os.Stat(dir); !os.IsNotExist(err) {
 		t.Errorf("the run's directory is still there: %v", err)
+	}
+}
+
+// TestRunStep_ARefGoneWhileWaitedForFails waits for the element of a ref to
+// be shown, and the page takes it out meanwhile: the action fails as soon
+// as the ref is gone, with the reason, rather than once the timeout runs
+// out. A click that takes its own button out succeeds.
+func TestRunStep_ARefGoneWhileWaitedForFails(t *testing.T) {
+	if testing.Short() {
+		t.Skip("starts Chrome")
+	}
+	t.Setenv(CacheDirEnv, t.TempDir())
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `<!doctype html><title>t</title>
+<button id="b">Go</button>
+<button id="hider" onclick="b.style.display='none'; setTimeout(() => b.remove(), 1000)">Hide</button>
+<button id="self" onclick="this.remove()">Close</button>`)
+	}))
+	defer srv.Close()
+
+	a := &Action{log: hclog.NewNullLogger()}
+	run := "run-gone-" + strconv.Itoa(os.Getpid())
+	t.Cleanup(func() { _ = cleanupSessions(run) })
+	call := func(state map[string]any, timeout string, actions ...any) (map[string]any, map[string]any, error) {
+		return a.RunStep(actionrpc.Call{
+			With:      map[string]any{"session": true, "headless": true, "timeout": timeout, "evidence_dir": t.TempDir(), "actions": actions},
+			State:     state,
+			Step:      actionrpc.Step{RunID: run},
+			Cleanups:  &actionrpc.Cleanups{},
+			Processes: &actionrpc.Processes{},
+		})
+	}
+	ret, state, err := call(nil, "20s",
+		map[string]any{"name": "navigate", "url": srv.URL},
+		map[string]any{"name": "read_page", "id": "outline"},
+	)
+	if err != nil {
+		if strings.Contains(err.Error(), "executable file not found") {
+			t.Skipf("no Chrome to start: %v", err)
+		}
+		t.Fatal(err)
+	}
+	outline := fmt.Sprint(ret["res"])
+	refOf := func(name string) string {
+		i := strings.Index(outline, `button "`+name+`" [`)
+		if i < 0 {
+			t.Fatalf("no button %q in %s", name, outline)
+		}
+		rest := outline[i+len(`button "`+name+`" [`):]
+		return rest[:strings.Index(rest, "]")]
+	}
+
+	if _, _, err := call(state, "20s", map[string]any{"name": "click", "ref": refOf("Close")}); err != nil {
+		t.Errorf("a click that takes its button out: %v", err)
+	}
+
+	start := time.Now()
+	_, _, err = call(state, "20s",
+		map[string]any{"name": "click", "selector": "#hider"},
+		map[string]any{"name": "click", "ref": refOf("Go")},
+	)
+	if err == nil || !strings.Contains(err.Error(), "is not on the page any more") {
+		t.Fatalf("err = %v, want the ref gone", err)
+	}
+	if d := time.Since(start); d > 10*time.Second {
+		t.Errorf("the click took %s to fail, as long as its timeout", d)
+	}
+}
+
+// TestTarget_ARefGone: a script that runs once on the element of a ref
+// gone fails with the reason, while the query of an action waits, finding
+// none, as wait_not_visible needs.
+func TestTarget_ARefGone(t *testing.T) {
+	if testing.Short() {
+		t.Skip("starts Chrome")
+	}
+	opts := append(chromedp.DefaultExecAllocatorOptions[:], chromedp.NoSandbox, chromedp.Flag("headless", true))
+	allocCtx, allocCancel := chromedp.NewExecAllocator(context.Background(), opts...)
+	defer allocCancel()
+	ctx, cancel := chromedp.NewContext(allocCtx)
+	defer cancel()
+	if err := chromedp.Do(ctx); err != nil {
+		t.Skipf("no Chrome to start: %v", err)
+	}
+	ctx, tcancel := context.WithTimeout(ctx, 20*time.Second)
+	defer tcancel()
+
+	if err := chromedp.Do(ctx, chromedp.Navigate("data:text/html,<p>A page</p>")); err != nil {
+		t.Fatal(err)
+	}
+	tg := target{ref: "ref_abcd1"}
+	_, err := chromedp.Run(ctx, chromedp.Evaluate[chromedp.Void]("("+tg.first()+", undefined)"))
+	if err == nil || !strings.Contains(err.Error(), "ref_abcd1 is not on the page any more") {
+		t.Errorf("a script on a ref gone: %v, want the reason", err)
+	}
+	if err := chromedp.Do(ctx, chromedp.WaitNotPresent(tg.path(), tg.opts()...)); err != nil {
+		t.Errorf("the query of a ref gone found something: %v", err)
 	}
 }
