@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Probe Browser Network Fixture</title>
+  <!-- An icon of its own, so that the browser asks for no favicon.ico. -->
+  <link rel="icon" href="data:,">
+</head>
+<body>
+  <h1>Network</h1>
+  <button id="fetch" type="button">Fetch</button>
+  <p id="done">none</p>
+  <script>
+    // A request the server answers with 500, one that reaches no server,
+    // and a slow one, each read to its end, so that it has ended when the
+    // page says it is done.
+    document.getElementById("fetch").addEventListener("click", async () => {
+      await Promise.allSettled([
+        fetch("/broken").then((r) => r.text()),
+        fetch("http://127.0.0.1:59999/refused").then((r) => r.text()),
+        fetch("/slow").then((r) => r.text()),
+      ]);
+      document.getElementById("done").textContent = "done";
+    });
+  </script>
+</body>
+</html>

@@ -225,6 +225,8 @@ When every action succeeds, the step sees:
 | `res.results` | Object | What the reading actions returned, by `id` or action name |
 | `res.filepaths` | Object | Where the screenshots, the storage states and the passkeys were saved, by `id` or action name |
 | `res.console_errors` | List | The errors the page wrote to its console while the actions ran, in order. See [Checking the console](#checking-the-console) |
+| `res.network_errors` | List | The requests of the page that failed while the actions ran, each with `method`, `url`, `status` and `error`. See [Checking the requests](#checking-the-requests) |
+| `res.requests` | Object | How many requests of the page ended while the actions ran, `count`, and the five that took longest, `slowest`, each with `method`, `url`, `status` and `duration_ms`. See [Checking the requests](#checking-the-requests) |
 | `rt.duration` | String | How long the step took, such as `"663.268333ms"` |
 | `status` | Integer | `0` |
 
@@ -698,6 +700,39 @@ When an action fails, the failure message names the first few of them, as one is
 ```
 ... context deadline exceeded (console errors: "Uncaught TypeError: Cannot read properties of null (reading 'total') (http://localhost:8090/checkout.js:42:17)") (page at failure: ...)
 ```
+
+### Checking the requests
+
+The step records the requests the page sends over HTTP or HTTPS while the actions run, as the console. A request the server answers with a status of 400 or more, and one that gets no answer, as when the server cannot be reached, are in `res.network_errors`; a request the page or the browser gave up on, as when the page went on to another, is not. `res.requests` counts the requests that ended, and keeps the five that took longest, from when they were sent, their redirects included, to their last byte.
+
+```yaml
+  - name: The dashboard loads without failed requests, and fast
+    uses: browser
+    with:
+      actions:
+        - name: navigate
+          url: "{{vars.url}}/dashboard"
+        - name: wait_visible
+          selector: "#chart"
+    test: |
+      res.code == 0 &&
+      len(res.network_errors) == 0 &&
+      res.requests.slowest[0].duration_ms < 2000
+```
+
+```
+network_errors:
+  - method: GET
+    url: http://localhost:8090/broken
+    status: 500
+    error: ""
+  - method: GET
+    url: http://127.0.0.1:59999/refused
+    status: 0
+    error: net::ERR_CONNECTION_REFUSED
+```
+
+A request still under way when the last action ends is not counted, so wait for what it brings, as with `wait_visible`, before the step ends. The browser asks for `/favicon.ico` of a page that names no icon, and a 404 for it is among the errors. When an action fails, the error names the first five network errors, as it names the console errors.
 
 ### Keeping a screenshot
 
