@@ -4,6 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -188,5 +192,35 @@ func TestRequestSet_ACarriedRequestAnsweredUnseen(t *testing.T) {
 	}
 	if p := s.pending(); len(p) != 0 {
 		t.Errorf("pending %+v after it ended", p)
+	}
+}
+
+// TestDo_NoRequestOfTheStorageState starts a browser from a storage state
+// with localStorage of the test server's origin: the page opened to write
+// it is answered inside the browser, and is none of the requests of the
+// step.
+func TestDo_NoRequestOfTheStorageState(t *testing.T) {
+	if testing.Short() {
+		t.Skip("starts Chrome")
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `<!doctype html><title>t</title><link rel="icon" href="data:,"><p>page</p>`)
+	}))
+	defer srv.Close()
+	state := filepath.Join(t.TempDir(), "state.json")
+	if err := os.WriteFile(state, []byte(`{"cookies":[],"origins":[{"origin":"`+srv.URL+`","localStorage":[{"name":"token","value":"t-42"}]}]}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	ret, err := Request(map[string]any{"headless": true, "timeout": "30s", "evidence_dir": t.TempDir(), "storage_state": state,
+		"actions": []any{map[string]any{"name": "navigate", "url": srv.URL + "/page"}}})
+	if err != nil {
+		if strings.Contains(err.Error(), "executable file not found") {
+			t.Skipf("no Chrome to start: %v", err)
+		}
+		t.Fatal(err)
+	}
+	got := ret["res"].(map[string]any)["requests"].(map[string]any)
+	if fmt.Sprint(got["count"]) != "1" || !strings.Contains(fmt.Sprint(got["slowest"]), "/page") {
+		t.Errorf("requests %v, want the page alone", got)
 	}
 }

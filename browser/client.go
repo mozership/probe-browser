@@ -244,6 +244,9 @@ type Req struct {
 	OneTab  bool `map:"one_tab"`
 	Timeout time.Duration
 	cb      *Callback
+	// recordFrom is where in the tasks the requests of the page begin to be
+	// read, after what the browser is set up with.
+	recordFrom int
 	// oneTabScript is the registration of one_tab's script, removed once
 	// the actions have run.
 	oneTabScript page.ScriptIdentifier
@@ -535,6 +538,9 @@ func (req *Req) buildActionTasks() ([]chromedp.Action[chromedp.Void], error) {
 		}
 		tasks = append(tasks, loadStorageState(s))
 	}
+	// The requests of the page are read from here on: the pages the storage
+	// state opens are answered inside the browser, and are none of its.
+	req.recordFrom = len(tasks)
 
 	for _, action := range req.Actions {
 		// Only wait_text waits for a text, so on any other action the fields
@@ -901,13 +907,18 @@ func (req *Req) do() (*Result, error) {
 		console = recordConsole(browserCtx, c.Console)
 	}
 	// Only of a browser of chromedp: on another context, as of a mock, the
-	// events of chromedp would start a browser of their own.
+	// events of chromedp would start a browser of their own. The recording
+	// starts among the tasks, once the browser is set up.
 	if _, ok := req.browserRunner.(*ChromeDPRunner); ok {
 		var pending []pendingRequest
 		if req.attaches() {
 			pending = req.session.pending
 		}
-		net = recordNetwork(browserCtx, pending)
+		start := func(ctx context.Context, t *chromedp.Target) (chromedp.Void, error) {
+			net = recordNetwork(browserCtx, pending)
+			return chromedp.Void{}, nil
+		}
+		tasks = slices.Insert(tasks, min(req.recordFrom, len(tasks)), chromedp.Action[chromedp.Void](start))
 	}
 
 	ctx, actionsCancel := context.WithDeadline(browserCtx, deadline)
