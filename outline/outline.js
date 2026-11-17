@@ -16,11 +16,16 @@
   const refs = new Map();
   const ids = new WeakMap();
   let next = 1;
+  // tag tells the refs of this document from those of another the tab
+  // showed before, whose counter also began at 1: four letters, so that a
+  // ref kept from an earlier page names nothing here rather than another
+  // element.
+  const tag = Array.from(crypto.getRandomValues(new Uint8Array(4)), (b) => String.fromCharCode(97 + (b % 26))).join('');
 
   const refOf = (el) => {
     let r = ids.get(el);
     if (!r) {
-      r = 'ref_' + next++;
+      r = 'ref_' + tag + next++;
       ids.set(el, r);
       refs.set(r, new WeakRef(el));
     }
@@ -121,11 +126,12 @@
   // under tells what el and the elements under it hold that innerText
   // does not read as the flat tree shows it: an open shadow root or a slot
   // of one (SHADOW), and a paragraph (PARAGRAPH). It is worked out once for
-  // each element, from what its children hold, and kept for the call, as
-  // the script is run anew for each.
+  // each element, from what its children hold, and kept for the call: each
+  // function the script gives starts with none kept, as the page can have
+  // changed since the last.
   const SHADOW = 1;
   const PARAGRAPH = 2;
-  const held = new WeakMap();
+  let held = new WeakMap();
   const under = (el) => {
     let m = held.get(el);
     if (m !== undefined) return m;
@@ -311,9 +317,10 @@
     return tidy(rendered(el));
   };
 
-  const nameOf = (el, role) => {
-    const label = el.getAttribute('aria-label');
-    if (label) return label;
+  // labelOf gives the name el is given in so many words: by the elements
+  // aria-labelledby names, which come first, as for assistive technology,
+  // or by aria-label. It is '' for an element given none.
+  const labelOf = (el) => {
     const by = el.getAttribute('aria-labelledby');
     if (by) {
       // The ids are looked up where el is, which is a shadow root for an
@@ -325,6 +332,12 @@
       }).join(' ');
       if (squash(t)) return t;
     }
+    return el.getAttribute('aria-label') || '';
+  };
+
+  const nameOf = (el, role) => {
+    const label = labelOf(el);
+    if (squash(label)) return label;
     if (el.labels && el.labels.length) {
       // A label may be hidden, and still names el.
       const t = Array.from(el.labels).map((l) => textOf(l) || l.textContent).join(' ');
@@ -357,7 +370,8 @@
     if (['checkbox', 'radio', 'switch'].includes(role)) {
       props.push(el.checked || el.getAttribute('aria-checked') === 'true' ? 'checked' : 'unchecked');
     }
-    if (el.disabled || el.getAttribute('aria-disabled') === 'true') props.push('disabled');
+    // :disabled is also that of a control in a disabled fieldset.
+    if (el.matches(':disabled') || el.getAttribute('aria-disabled') === 'true') props.push('disabled');
     if (el.required || el.getAttribute('aria-required') === 'true') props.push('required');
     if (el.getAttribute('aria-invalid') === 'true') props.push('invalid');
     if (role === 'link') {
@@ -376,7 +390,7 @@
   // containers nest, and ref reads only that element and what it holds.
   const read = (filter, depth, ref) => {
     const all = filter === 'all';
-    const onlyInteractive = filter === 'interactive';
+    let onlyInteractive = filter === 'interactive';
     const out = [];
     let size = 0;
     let truncated = false;
@@ -394,7 +408,9 @@
         if (truncated) return;
         if (child.nodeType === Node.TEXT_NODE) {
           const t = squash(child.textContent);
-          if (t && !onlyInteractive && child.parentElement && visible(child.parentElement)) {
+          // Text at the top of a shadow root is shown as its host is.
+          const parent = child.parentElement || (child.parentNode && child.parentNode.host);
+          if (t && !onlyInteractive && parent && visible(parent)) {
             push(d, 'text ' + quote(clip(t, 300)));
           }
           continue;
@@ -406,17 +422,28 @@
 
     const visit = (el, d) => {
       if (skipped.has(el.tagName) || el.getAttribute('aria-hidden') === 'true') return;
-      if (getComputedStyle(el).display === 'none') return;
+      // Opacity is not inherited, but an element of opacity 0 hides what
+      // it holds as it hides itself.
+      const style = getComputedStyle(el);
+      if (style.display === 'none' || style.opacity === '0') return;
       const role = roleOf(el);
       if (interactive(el, role) || ((role === 'heading' || role === 'img') && !onlyInteractive)) {
         if (visible(el)) push(d, describe(el, role) + ' [' + refOf(el) + ']');
+        if (role === 'heading' && !onlyInteractive) {
+          // A heading can hold a link, as <h2><a href>: what one can act
+          // on in it comes below it, its text being its name.
+          onlyInteractive = true;
+          walk(el, d + 1);
+          if (el.shadowRoot) walk(el.shadowRoot, d + 1);
+          onlyInteractive = false;
+        }
         return;
       }
       if (containerRoles.has(role) && !onlyInteractive && shown(el)) {
         if (d >= depth) return;
         const before = out.length;
-        const label = el.getAttribute('aria-label');
-        push(d, role + (label ? ' ' + quote(clip(label, 80)) : '') + ' [' + refOf(el) + ']');
+        const label = clip(labelOf(el), 80);
+        push(d, role + (label ? ' ' + quote(label) : '') + ' [' + refOf(el) + ']');
         walk(el, d + 1);
         if (el.shadowRoot) walk(el.shadowRoot, d + 1);
         if (out.length === before + 1 && !['alert', 'status'].includes(role)) {
@@ -509,10 +536,35 @@
     const body = textOf(document.body, flat);
     const main = first('main, [role=main]');
     if (!main) return body;
-    // main is read as the body is, so that its text is found in the body's.
     const inMain = textOf(main, flat);
-    const rest = body.replace(inMain, '').replace(/^\s*\n/, '').replace(/\n+$/, '');
+    const rest = around(main, flat).join('\n');
     return inMain + (squash(rest) ? '\n\n' + rest : '');
+  };
+
+  // around gives the texts of what is around el up to the body, in the
+  // order of the page, el itself left out: those of the nodes beside it,
+  // then of those beside what holds it, and so on, a shadow root's going
+  // on with its host's.
+  const around = (el, flat) => {
+    const before = [];
+    const after = [];
+    const of = (node) => {
+      if (node.nodeType === Node.ELEMENT_NODE) return textOf(node, flat).trim();
+      if (node.nodeType !== Node.TEXT_NODE) return '';
+      const parent = node.parentElement || (node.parentNode && node.parentNode.host);
+      return parent && shows(parent) ? squash(node.nodeValue) : '';
+    };
+    let node = el;
+    while (node && node !== document.body) {
+      const parent = node.parentNode;
+      if (!parent) break;
+      const siblings = Array.from(parent.childNodes);
+      const i = siblings.indexOf(node);
+      before.unshift(...siblings.slice(0, i).map(of).filter(Boolean));
+      after.push(...siblings.slice(i + 1).map(of).filter(Boolean));
+      node = parent instanceof ShadowRoot ? parent.host : parent;
+    }
+    return before.concat(after);
   };
 
   // The elements shown with role and name, in the order of the document,
@@ -572,5 +624,11 @@
     return out;
   };
 
-  window.__probeOutline = { read, point, scrollTo, focus, formInput, text, locator, locate, alerts };
+  const fresh = (f) => (...args) => {
+    held = new WeakMap();
+    return f(...args);
+  };
+  window.__probeOutline = Object.fromEntries(Object.entries({
+    read, point, scrollTo, focus, formInput, text, locator, locate, alerts,
+  }).map(([name, f]) => [name, fresh(f)]));
 })();

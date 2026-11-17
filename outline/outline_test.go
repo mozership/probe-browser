@@ -57,6 +57,29 @@ customElements.define('note-frame', class extends HTMLElement {
 </script>
 </body></html>`
 
+// reviewPage holds what an outline is easy to get wrong.
+const reviewPage = `<!doctype html>
+<html><head><title>Review</title></head><body>
+<header>Account settings</header>
+<main>
+  <h2><a href="/article">Article</a></h2>
+  <div style="opacity:0"><button>Ghost</button></div>
+  <button aria-label="Wrong" aria-labelledby="lb">x</button><span id="lb">Right</span>
+  <fieldset disabled><select id="color"><option>Red</option></select></fieldset>
+  <nav aria-labelledby="navl"><a href="/x">X</a></nav><span id="navl">Site</span>
+  <plain-text></plain-text>
+  Account
+</main>
+<script>
+customElements.define('plain-text', class extends HTMLElement {
+  constructor() {
+    super();
+    this.attachShadow({mode: 'open'}).textContent = 'Ready in the shadow';
+  }
+});
+</script>
+</body></html>`
+
 // startChrome starts Chrome on a page of a test server, and skips the test
 // where there is none to start.
 func startChrome(t *testing.T) context.Context {
@@ -70,6 +93,7 @@ func startChrome(t *testing.T) context.Context {
 		fmt.Fprint(w, `<!doctype html><title>Next</title><h1>Second page</h1>`)
 	})
 	mux.HandleFunc("/shadow", func(w http.ResponseWriter, r *http.Request) { fmt.Fprint(w, shadowPage) })
+	mux.HandleFunc("/review", func(w http.ResponseWriter, r *http.Request) { fmt.Fprint(w, reviewPage) })
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 
@@ -107,7 +131,7 @@ func read(t *testing.T, ctx context.Context, filter string, depth int, ref strin
 // refOf returns the ref of the first line of lines that matches pattern.
 func refOf(t *testing.T, lines, pattern string) string {
 	t.Helper()
-	re := regexp.MustCompile(regexp.QuoteMeta(pattern) + `.*\[(ref_\d+)\]`)
+	re := regexp.MustCompile(regexp.QuoteMeta(pattern) + `.*\[(ref_[a-z]{4}\d+)\]`)
 	for _, line := range strings.Split(lines, "\n") {
 		if m := re.FindStringSubmatch(line); m != nil {
 			return m[1]
@@ -166,6 +190,11 @@ func TestRead_ARefGoesStaleOnNavigation(t *testing.T) {
 	open(t, ctx, "/")
 	ref := refOf(t, read(t, ctx, "", 0, ""), `button "Sign up"`)
 	open(t, ctx, "/next")
+	// The next page gives refs of its own, whose counter also starts at 1,
+	// and none of them is the one of the page before.
+	if next := read(t, ctx, "", 0, ""); strings.Contains(next, ref+"]") {
+		t.Fatalf("the next page gave %s too:\n%s", ref, next)
+	}
 	_, err := chromedp.Run(ctx, Read("", 0, ref))
 	if err == nil || !strings.Contains(err.Error(), "is not on the page any more") {
 		t.Errorf("a read of a ref of the page before: %v, want that it is stale", err)
@@ -216,5 +245,72 @@ func TestScript_InstallsOnce(t *testing.T) {
 	}
 	if got := read(t, ctx, "", 0, ref); !strings.Contains(got, `button "Sign up"`) {
 		t.Errorf("a read of %s after the script ran again: %s", ref, got)
+	}
+}
+
+func TestRead_WhatIsEasyToGetWrong(t *testing.T) {
+	ctx := startChrome(t)
+	open(t, ctx, "/review")
+	got := read(t, ctx, "", 0, "")
+	for _, want := range []string{
+		// A link in a heading comes below the heading.
+		"heading \"Article\" level=2 [ref_",
+		"  link \"Article\" href=\"/article\" [ref_",
+		// aria-labelledby names an element before aria-label, a container
+		// too.
+		"button \"Right\" [ref_",
+		"navigation \"Site\" [ref_",
+		// A control of a disabled fieldset is disabled.
+		"combobox \"\" value=\"Red\" options=\"Red\" disabled [ref_",
+		// Text at the top of a shadow root is read.
+		"text \"Ready in the shadow\"",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("the outline lacks %q:\n%s", want, got)
+		}
+	}
+	for _, unwanted := range []string{"Ghost", "Wrong"} {
+		if strings.Contains(got, unwanted) {
+			t.Errorf("the outline has %q:\n%s", unwanted, got)
+		}
+	}
+}
+
+func TestText_TheRestIsWhatIsAroundMain(t *testing.T) {
+	ctx := startChrome(t)
+	open(t, ctx, "/review")
+	text, err := chromedp.Run(ctx, Text())
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The header's text holds main's last word, and stays whole after it.
+	if !strings.HasSuffix(text, "\n\nAccount settings") {
+		t.Errorf("the text does not end with the header after main:\n%s", text)
+	}
+	if n := strings.Count(text, "Ready in the shadow"); n != 1 {
+		t.Errorf("the shadow text is there %d times:\n%s", n, text)
+	}
+}
+
+func TestText_ReadsAShadowRootAddedSince(t *testing.T) {
+	ctx := startChrome(t)
+	open(t, ctx, "/")
+	if _, err := chromedp.Run(ctx, Text()); err != nil {
+		t.Fatal(err)
+	}
+	// A component the page adds after a read is read the next time.
+	add := `customElements.define('late-card', class extends HTMLElement {
+		constructor() { super(); this.attachShadow({mode: 'open'}).innerHTML = '<p>Added later</p>'; }
+	});
+	document.querySelector('main').append(document.createElement('late-card'));`
+	if _, err := chromedp.Run(ctx, chromedp.Evaluate[chromedp.Void](add)); err != nil {
+		t.Fatal(err)
+	}
+	text, err := chromedp.Run(ctx, Text())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(text, "Added later") {
+		t.Errorf("the text lacks the shadow root added since the last read:\n%s", text)
 	}
 }

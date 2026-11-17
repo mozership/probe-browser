@@ -356,25 +356,25 @@ A step that signs in can hand the token the app keeps in a cookie to a later ste
 For a page of a sign-up form, the outline is:
 
 ```
-main [ref_1]
-  heading "Create your account" level=1 [ref_2]
-  form [ref_3]
+main [ref_kqzm1]
+  heading "Create your account" level=1 [ref_kqzm2]
+  form [ref_kqzm3]
     text "Email"
-    textbox "Email" type=email required [ref_4]
+    textbox "Email" type=email required [ref_kqzm4]
     text "Password"
-    textbox "Password" type=password value="••••" [ref_5]
+    textbox "Password" type=password value="••••" [ref_kqzm5]
     text "Plan"
-    combobox "Plan" value="Free" options="Free | Pro" [ref_6]
-    checkbox "I agree" unchecked [ref_7]
+    combobox "Plan" value="Free" options="Free | Pro" [ref_kqzm6]
+    checkbox "I agree" unchecked [ref_kqzm7]
     text "I agree"
-    button "Sign up" [ref_8]
-  navigation "Footer" [ref_9]
-    link "Next page" href="/next" [ref_10]
+    button "Sign up" [ref_kqzm8]
+  navigation "Footer" [ref_kqzm9]
+    link "Next page" href="/next" [ref_kqzm10]
 ```
 
-Containers, such as a form, a list or a navigation, nest the elements in them, and `depth` bounds how far; text that is not in an element of its own is a line `text "..."`. The value of a password is read as dots, and the elements hidden from the page, or from assistive technology with `aria-hidden`, are left out, as are those out of the viewport unless `filter` is `all`. Open shadow roots are read as the page shows them. A page longer than 50,000 characters is cut, with a line that says so.
+Containers, such as a form, a list or a navigation, nest the elements in them, and `depth` bounds how far, and what one can act on in a heading, as a link, comes below it; text that is not in an element of its own is a line `text "..."`. An element is named as assistive technology names it, by `aria-labelledby` before `aria-label`, and is `disabled` in a disabled fieldset too. The value of a password is read as dots, and the elements hidden from the page, by `display: none`, `visibility` or an `opacity` of 0 on them or on what holds them, or from assistive technology with `aria-hidden`, are left out, as are those out of the viewport unless `filter` is `all`. Open shadow roots are read as the page shows them. A page longer than 50,000 characters is cut, with a line that says so.
 
-A ref names its element for as long as the element is in the document, so a later `read_page` with `ref` reads that element alone, as do the steps after it with [`session`](#keeping-the-browser-open), which drive the same document. A ref of a document the tab has left fails the action, which says to read the page again. Reading writes nothing to the page, so the application sees nothing of it.
+A ref is `ref_`, four letters drawn for the document, and a number counted from 1 in the order the elements are first read. It names its element for as long as the element is in the document, so a later `read_page` with `ref` reads that element alone, as do the steps after it with [`session`](#keeping-the-browser-open), which drive the same document. A ref of a document the tab has left fails the action, which says to read the page again: the letters of the next document's refs are drawn anew, so that a ref kept from an earlier page does not name an element of this one. Reading writes nothing to the page, so the application sees nothing of it.
 
 `page_text` reads the text the page shows, as `text` reads that of an element, with the main content, `main` or `role=main`, first.
 

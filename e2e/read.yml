@@ -33,16 +33,16 @@ jobs:
         id: text
     test: |
       res.code == 0 &&
-      res.results.outline contains 'heading "Probe Browser Fixture" level=1 [ref_1]' &&
+      res.results.outline matches 'heading "Probe Browser Fixture" level=1 \\[ref_[a-z]{4}1\\]' &&
       res.results.outline contains 'text "Ready: 3 items"' &&
       res.results.outline contains 'combobox "Size" value="Small"' &&
       !(res.results.interactive contains "heading") &&
       res.results.interactive contains 'combobox "Size"' &&
       res.results.text contains "Probe Browser Fixture" &&
       res.results.text contains "Ready: 3 items"
+    outputs:
+      heading: res.results.outline | split("\n") | filter(# startsWith "heading") | first() | split("[") | last() | trimSuffix("]")
 
-  # The first read gave the refs in the order of the page, the heading
-  # first.
   - name: The next step reads an element by the ref the first read gave it
     uses: browser
     with:
@@ -51,7 +51,8 @@ jobs:
       actions:
       - name: read_page
         id: heading
-        ref: ref_1
+        ref: "{{outputs.heading}}"
     test: |
       res.code == 0 &&
-      res.results.heading startsWith 'heading "Probe Browser Fixture"'
+      outputs.heading matches '^ref_[a-z]{4}1$' &&
+      res.results.heading == 'heading "Probe Browser Fixture" level=1 [' + outputs.heading + ']'
