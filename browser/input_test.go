@@ -58,7 +58,7 @@ func TestParseKey_Refused(t *testing.T) {
 	}{
 		{"", "press needs value"},
 		{"Return", `"Return" is not a key`},
-		{"Ctrl+a", `"Ctrl" is not a modifier`},
+		{"Hyper+a", `"Hyper" is not a modifier`},
 		{"Shift+", `"" is not a key`},
 		{`\r`, `"\\r" is not a key`},
 	}

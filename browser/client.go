@@ -166,6 +166,22 @@ type ChromeDPAction struct {
 	Filter string `map:"filter"`
 	Depth  int    `map:"depth"`
 	Ref    string `map:"ref"`
+	// X and Y are a point of the viewport, in CSS pixels, that click,
+	// double_click, right_click, hover and wheel act at in place of an
+	// element.
+	X float64 `map:"x"`
+	Y float64 `map:"y"`
+	// Button, Count and Modifiers are how click presses the mouse: left,
+	// middle or right; 1 to 3 times; holding Alt, Control, Meta or Shift.
+	Button    string   `map:"button"`
+	Count     int      `map:"count"`
+	Modifiers []string `map:"modifiers"`
+	// Direction and Amount are where wheel turns the wheel, up, down, left
+	// or right, and by how many notches.
+	Direction string `map:"direction"`
+	Amount    int    `map:"amount"`
+	// Repeat is how many times press presses its keys.
+	Repeat int `map:"repeat"`
 	// given names which of the text fields the workflow wrote,
 	// since an empty string is otherwise the same as one left out.
 	given      []string
@@ -263,6 +279,7 @@ func (req *Req) parseData(data map[string]any, opts []Option) error {
 		return fmt.Errorf("MapToStructByTags failed: %w", err)
 	}
 	markGivenTextFields(data, req.Actions)
+	markGivenPointerFields(data, req.Actions)
 
 	// timeout takes "30s", 30 or "30", like the other actions. It used to
 	// accept only a duration string and silently keep the default for
@@ -306,14 +323,20 @@ func attributesAsLists(data map[string]any) map[string]any {
 	converted := make([]any, len(actions))
 	for i, a := range actions {
 		action, ok := a.(map[string]any)
-		attr, isString := action["attribute"].(string)
-		if !ok || !isString {
+		attr, isAttr := action["attribute"].(string)
+		mod, isMod := action["modifiers"].(string)
+		if !ok || (!isAttr && !isMod) {
 			converted[i] = a
 			continue
 		}
 		copied := make(map[string]any, len(action))
 		maps.Copy(copied, action)
-		copied["attribute"] = []any{attr}
+		if isAttr {
+			copied["attribute"] = []any{attr}
+		}
+		if isMod {
+			copied["modifiers"] = []any{mod}
+		}
 		converted[i] = copied
 	}
 	out["actions"] = converted
@@ -490,6 +513,9 @@ func (req *Req) buildActionTasks() ([]chromedp.Action[chromedp.Void], error) {
 		if action.Name != "read_page" && !elementActions[action.Name] && action.Ref != "" {
 			return nil, fmt.Errorf("%s does not take ref, as it acts on no element", action.Name)
 		}
+		if err := action.checkPointer(); err != nil {
+			return nil, err
+		}
 		tg := action.target()
 		if err := action.checkTarget(); err != nil {
 			return nil, err
@@ -535,11 +561,31 @@ func (req *Req) buildActionTasks() ([]chromedp.Action[chromedp.Void], error) {
 			tasks = append(tasks, store(chromedp.Value(tg.path(), tg.opts()...), &text))
 			action.reText = &text
 		case "click":
-			tasks = append(tasks, chromedp.Click(tg.path(), tg.opts(chromedp.NodeVisible)...))
+			if tg.point == nil && !action.givesAny(mouseFields...) {
+				tasks = append(tasks, chromedp.Click(tg.path(), tg.opts(chromedp.NodeVisible)...))
+				break
+			}
+			click, err := mouseClick(tg, action.Button, action.Count, action.Modifiers)
+			if err != nil {
+				return nil, err
+			}
+			tasks = append(tasks, click)
+		case "wheel":
+			turn, err := wheel(tg, action.Direction, action.Amount)
+			if err != nil {
+				return nil, err
+			}
+			tasks = append(tasks, turn)
 		case "send_keys", "type":
+			if tg.empty() {
+				// Without an element, the keys go to the one that has the
+				// focus, as a user's do.
+				tasks = append(tasks, chromedp.KeyEvent(action.Value))
+				break
+			}
 			tasks = append(tasks, typeText(tg, action.Value))
 		case "press":
-			press, err := pressKey(tg, action.Value)
+			press, err := pressKeys(tg, action.Value, action.Repeat)
 			if err != nil {
 				return nil, err
 			}
@@ -589,6 +635,10 @@ func (req *Req) buildActionTasks() ([]chromedp.Action[chromedp.Void], error) {
 			}
 			action.reText = &text
 		case "hover":
+			if tg.point != nil {
+				tasks = append(tasks, mouseMove(tg))
+				break
+			}
 			// The script is a function's, as it runs in the page's global
 			// scope, where a top-level const would clash with the next one.
 			// The event is composed, as a user's is, so that it leaves a
@@ -613,8 +663,18 @@ func (req *Req) buildActionTasks() ([]chromedp.Action[chromedp.Void], error) {
 		case "wait_enabled":
 			tasks = append(tasks, chromedp.WaitEnabled(tg.path(), tg.opts(chromedp.NodeVisible)...))
 		case "double_click":
+			if tg.point != nil {
+				click, _ := mouseClick(tg, "left", 2, nil)
+				tasks = append(tasks, click)
+				break
+			}
 			tasks = append(tasks, chromedp.DoubleClick(tg.path(), tg.opts(chromedp.NodeVisible)...))
 		case "right_click":
+			if tg.point != nil {
+				click, _ := mouseClick(tg, "right", 1, nil)
+				tasks = append(tasks, click)
+				break
+			}
 			tasks = append(tasks, chromedp.EvaluateAsDevTools[chromedp.Void](fmt.Sprintf(`((el) => {
 				if (el) {
 					const event = new MouseEvent('contextmenu', {

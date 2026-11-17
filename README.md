@@ -72,6 +72,10 @@ Each entry of `actions` names its action in `name` and takes these fields:
 | `not_contains` | `wait_text` | Wait until the text does not contain this, as when a placeholder such as `Loading` gives way to the content |
 | `matches` | `wait_text` | Wait until the text matches this regular expression, in [Go's syntax](https://pkg.go.dev/regexp/syntax) |
 | `cookie_name` | `get_cookie` | The name of the cookie to read |
+| `x`, `y` | `click`, `double_click`, `right_click`, `hover`, `wheel` | A point of the viewport, in CSS pixels from its top left corner, to act at in place of an element. See [Using the mouse at a point](#using-the-mouse-at-a-point) |
+| `button`, `count`, `modifiers` | `click` | The mouse button, `left`, `middle` or `right`; how many times to click, 1 to 3; the modifiers to hold, a list of `Alt`, `Control`, `Meta` and `Shift` |
+| `direction`, `amount` | `wheel` | Where to turn the wheel, `up`, `down`, `left` or `right`, and how many notches, 3 when unset |
+| `repeat` | `press` | How many times to press the keys, 1 when unset |
 | `filter` | `read_page` | `all` reads the elements shown out of the viewport too, and `interactive` only those of the viewport one can act on. Without it, the elements shown in the viewport |
 | `depth` | `read_page` | How far containers, such as a form or a list, nest in the outline; `15` when unset |
 | `ref` | `read_page`, actions on an element | The ref of an element, as an earlier `read_page` gave it. Of `read_page`, read only that element and what it holds; of an action on an element, the element it acts on, in place of `selector` and `has_text`. See [Finding an element](#finding-an-element) |
@@ -154,17 +158,35 @@ These act on the page the way a user would. They return nothing.
 
 | Action | What it does |
 |--------|--------------|
-| `click` | Clicks `selector` once it is visible |
-| `double_click` | Double-clicks `selector` once it is visible |
-| `type`, `send_keys` | Types `value` into `selector` in place of what it holds, once it is visible. Of an `input` or a `textarea`, the value is cleared first. Of a contenteditable element, such as a rich text editor, the content is selected and typed over, as after Ctrl+A, so that the editor sees the change; an empty `value` deletes it. Any other element fails the step |
-| `press` | Presses the key `value` on `selector`, once it is visible, or without `selector` on the element that has the focus. See [Pressing a key](#pressing-a-key) |
+| `click` | Clicks `selector` once it is visible, or the point `x`, `y`. With `button`, `count` or `modifiers`, it presses the mouse so. See [Using the mouse at a point](#using-the-mouse-at-a-point) |
+| `double_click` | Double-clicks `selector` once it is visible, or the point `x`, `y` |
+| `wheel` | Turns the mouse wheel `amount` notches, 3 when unset, toward `direction`, `up`, `down`, `left` or `right`, over the middle of the first box of `selector`, once it is visible, or over the point `x`, `y`. An element whose middle is out of the viewport is scrolled into view first, and one in it is left where it is, so that a wheel after a wheel scrolls on. A notch scrolls 100 CSS pixels, as a mouse's does in Chrome |
+| `type`, `send_keys` | Without `selector`, types `value` into the element that has the focus, as a user's keys go. With it, types `value` into `selector` in place of what it holds, once it is visible. Of an `input` or a `textarea`, the value is cleared first. Of a contenteditable element, such as a rich text editor, the content is selected and typed over, as after Ctrl+A, so that the editor sees the change; an empty `value` deletes it. Any other element fails the step |
+| `press` | Presses the keys `value`, one or several apart by spaces, as `Control+a Backspace`, `repeat` times, 1 when unset, on `selector`, once it is visible, or without `selector` on the element that has the focus. See [Pressing a key](#pressing-a-key) |
 | `set_value` | Sets the value of the `input`, `textarea` or `select` at `selector` to `value`, once it is visible, and fires `input` and `change` as a user's edit does. It does not type, so a date is given as `2000-01-02` whatever the browser's locale. A value the field does not take, such as `2000-13-01` of a date, fails the step |
 | `submit` | Submits the form `selector` belongs to |
 | `focus` | Focuses `selector` |
 | `scroll` | Scrolls `selector` into view |
 | `select` | Chooses the option of the `<select>` at `selector` whose value is `value`, or else whose label is, once it is visible, and fires `input` and `change` as a user's choice does. An option that is not there or is disabled, a `<select>` that is disabled, and an element that is not a `<select>`, fail the step with the reason, a `disabled` on an `<optgroup>` or a `<fieldset>` around them included; the values of the options are in the message. Of a `<select multiple>`, the option is added to those chosen |
-| `hover` | Sends a `mouseover` event to `selector`. It does not wait, and does nothing when nothing matches |
-| `right_click` | Sends a `contextmenu` event to `selector`. It does not wait, and does nothing when nothing matches |
+| `hover` | Sends a `mouseover` event to `selector`. It does not wait, and does nothing when nothing matches. At the point `x`, `y`, it moves the mouse there |
+| `right_click` | Sends a `contextmenu` event to `selector`. It does not wait, and does nothing when nothing matches. At the point `x`, `y`, it clicks there with the right button of the mouse |
+
+#### Using the mouse at a point
+
+`click`, `double_click`, `right_click`, `hover` and `wheel` take `x` and `y`, a point of the viewport in CSS pixels from its top left corner, in place of an element, and act there with the mouse as a user's does, its events going to whatever the page shows at the point. It is for what has no element to name, as a point of a canvas or a map, or for a point a screenshot showed. `click` presses the mouse as `button`, `left`, `middle` or `right`, says, `count` times, 1 to 3, as a double or a triple click does, holding `modifiers`, a list of `Alt`, `Control`, `Meta` and `Shift`. These also apply to a `click` on an element, which then clicks with the mouse the middle of the first box the element shows, as of a link wrapped over two lines, once it is visible, scrolled into view. A point is in the viewport, so `x` and `y` below 0 are refused, as are a `count` out of 1 to 3, and an `amount` or a `repeat` below 1, written as 0 or not.
+
+```yaml
+        - name: click
+          x: 120
+          y: 80
+          modifiers: [Shift]
+        - name: wheel
+          selector: "#results"
+          direction: down
+          amount: 5
+```
+
+`x` and `y` go together, and not beside `selector`, `has_text` or `ref`. A modifier is also taken in lower case, and as `ctrl`, `cmd` or `option`, in a click and in a key of `press`.
 
 ### Screenshots
 
@@ -309,7 +331,7 @@ wait_text "#status": the text was "Loading", want it to match "^\\d+ orders$": c
 
 ### Pressing a key
 
-A `press` names the key as `KeyboardEvent.key` does, as `Enter`, `Tab`, `Escape`, `Backspace` or `ArrowDown`, or gives a single character, as `a`. `Space` is taken for `" "`. Modifiers come before the key, joined by `+`: `Alt`, `Control`, `Meta` and `Shift`, as in `Shift+Tab` or `Control+a`. A key it does not know is refused before the browser starts.
+A `press` names the key as `KeyboardEvent.key` does, as `Enter`, `Tab`, `Escape`, `Backspace` or `ArrowDown`, or gives a single character, as `a`. `Space` is taken for `" "`. Modifiers come before the key, joined by `+`: `Alt`, `Control`, `Meta` and `Shift`, as in `Shift+Tab` or `Control+a`. Several keys apart by spaces are pressed one after another, as `ArrowLeft Backspace`, and `repeat` presses them all again that many times. A key it does not know is refused before the browser starts.
 
 A search field that submits on Enter, with no button to click:
 

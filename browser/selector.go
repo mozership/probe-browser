@@ -330,9 +330,15 @@ type target struct {
 	css  string
 	text string
 	ref  string
+	// point is a point of the viewport an action of the mouse acts at, in
+	// place of an element.
+	point *point
 }
 
 func (a *ChromeDPAction) target() target {
+	if pointActions[a.Name] && a.givesPoint() {
+		return target{point: &point{a.X, a.Y}}
+	}
 	if !elementActions[a.Name] {
 		// The ref of read_page is what it reads, not an element it acts on.
 		return target{css: a.Selector, text: a.HasText}
@@ -342,13 +348,15 @@ func (a *ChromeDPAction) target() target {
 
 // empty tells whether the action names no element.
 func (tg target) empty() bool {
-	return tg.css == "" && tg.text == "" && tg.ref == ""
+	return tg.css == "" && tg.text == "" && tg.ref == "" && tg.point == nil
 }
 
 // String describes the target in errors, as "#size", as "button" with
 // text "Save" when it has a text, or as ref ref_kqzm4.
 func (tg target) String() string {
 	switch {
+	case tg.point != nil:
+		return fmt.Sprintf("the point %g, %g", tg.point.x, tg.point.y)
 	case tg.ref != "":
 		return "ref " + tg.ref
 	case tg.text == "":
@@ -492,7 +500,7 @@ var elementActions = map[string]bool{
 	"click": true, "double_click": true, "right_click": true, "hover": true,
 	"type": true, "send_keys": true, "set_value": true, "select": true,
 	"focus": true, "submit": true, "scroll": true, "screenshot": true,
-	"press": true,
+	"press": true, "wheel": true,
 }
 
 // checkTarget refuses an action on an element that names none, and
@@ -503,7 +511,9 @@ func (a *ChromeDPAction) checkTarget() error {
 		if a.HasText != "" {
 			return fmt.Errorf("%s does not take has_text, as it acts on no element", a.Name)
 		}
-	case a.Name != "press" && a.target().empty():
+	case pointActions[a.Name] && a.target().empty():
+		return fmt.Errorf("%s needs selector, has_text or ref, to find the element it acts on, or x and y, the point it acts at", a.Name)
+	case a.Name != "press" && a.Name != "type" && a.Name != "send_keys" && a.target().empty():
 		return fmt.Errorf("%s needs selector, has_text or ref, to find the element it acts on", a.Name)
 	case a.Ref != "" && (a.Selector != "" || a.HasText != ""):
 		return fmt.Errorf("%s takes ref, or selector and has_text, but not both: a ref names its element alone", a.Name)

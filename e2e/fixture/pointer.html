@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Probe Browser Pointer Fixture</title>
+  <style>
+    body { margin: 0; }
+    #pad { position: absolute; left: 0; top: 0; width: 400px; height: 200px; background: #eee; }
+    #below { position: absolute; left: 0; top: 220px; }
+    #scroller { height: 150px; width: 300px; overflow: auto; }
+    #scroller div { height: 2000px; }
+    html { scroll-behavior: smooth; }
+    #far { display: block; margin-top: 3000px; }
+  </style>
+</head>
+<body>
+  <!-- A pad at the top left of the viewport, so that a point of it is
+       known, which writes down the events of the mouse it gets. -->
+  <div id="pad">pad</div>
+  <div id="below">
+    <p id="events"></p>
+    <p id="hovered">none</p>
+    <div id="scroller"><div>tall</div></div>
+    <p id="scrolled">scrolled: 0</p>
+    <p id="page-scrolled">page scrolled: 0</p>
+    <!-- A list that scrolls, whose last item is cut off by it though the
+         middle of the item is in the viewport. -->
+    <div id="list" style="height: 60px; overflow: auto">
+      <div style="height: 200px">top of the list</div>
+      <div id="item" style="height: 40px; overflow: auto"><div style="height: 400px">an item that scrolls</div></div>
+    </div>
+    <p id="item-scrolled">item scrolled: 0</p>
+    <input id="field">
+    <!-- A button below the fold of a page that scrolls smoothly, which a
+         click with the mouse scrolls into view before it points at it. -->
+    <button id="far" type="button">Far</button>
+    <!-- A link wrapped over two lines, the middle of whose two boxes is in
+         the gap at the end of the first line, on the paragraph. -->
+    <p id="wrap" style="width: 200px">Some words before a <a id="wrapped" href="#wrapped">link that wraps over the line</a> and after it.</p>
+    <p id="wrap-clicked">none</p>
+    <p id="far-clicked">none</p>
+  </div>
+  <script>
+    const pad = document.getElementById("pad");
+    const events = document.getElementById("events");
+    const mods = (e) => ["ctrlKey", "shiftKey", "altKey", "metaKey"].filter((m) => e[m]).map((m) => m.replace("Key", "")).join("+") || "none";
+    for (const type of ["click", "dblclick", "auxclick", "contextmenu"]) {
+      pad.addEventListener(type, (e) => {
+        e.preventDefault();
+        events.textContent += `${type} button=${e.button} detail=${e.detail} mods=${mods(e)} at ${e.clientX},${e.clientY}; `;
+      });
+    }
+    pad.addEventListener("mousemove", (e) => {
+      document.getElementById("hovered").textContent = `hovered at ${e.clientX},${e.clientY}`;
+    });
+    document.getElementById("far").addEventListener("click", (e) => {
+      document.getElementById("far-clicked").textContent = "far clicked, shift=" + e.shiftKey;
+    });
+    document.getElementById("wrapped").addEventListener("click", (e) => {
+      e.preventDefault();
+      document.getElementById("wrap-clicked").textContent = "wrapped link clicked";
+    });
+    addEventListener("scroll", () => {
+      document.getElementById("page-scrolled").textContent = "page scrolled: " + Math.round(scrollY);
+    });
+    const item = document.getElementById("item");
+    item.addEventListener("scroll", () => {
+      document.getElementById("item-scrolled").textContent = "item scrolled: " + item.scrollTop;
+    });
+    const scroller = document.getElementById("scroller");
+    scroller.addEventListener("scroll", () => {
+      document.getElementById("scrolled").textContent = "scrolled: " + scroller.scrollTop;
+    });
+  </script>
+</body>
+</html>
