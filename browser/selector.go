@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/chromedp/chromedp"
+	"github.com/mozership/probe-browser/outline"
 )
 
 // selectorRetryInterval is how often a query looks at the page again while
@@ -322,25 +323,33 @@ const findScript = `(() => {
 })()`
 
 // target is the element an action acts on: the elements that match a CSS
-// selector, with a text when has_text is given.
+// selector, with a text when has_text is given, or the element of a ref a
+// read_page gave.
 type target struct {
 	css  string
 	text string
+	ref  string
 }
 
 func (a *ChromeDPAction) target() target {
-	return target{css: a.Selector, text: a.HasText}
+	if !elementActions[a.Name] {
+		// The ref of read_page is what it reads, not an element it acts on.
+		return target{css: a.Selector, text: a.HasText}
+	}
+	return target{css: a.Selector, text: a.HasText, ref: a.Ref}
 }
 
 // empty tells whether the action names no element.
 func (tg target) empty() bool {
-	return tg.css == "" && tg.text == ""
+	return tg.css == "" && tg.text == "" && tg.ref == ""
 }
 
-// String describes the target in errors, as "#size", or as "button" with
-// text "Save" when it has a text.
+// String describes the target in errors, as "#size", as "button" with
+// text "Save" when it has a text, or as ref ref_kqzm4.
 func (tg target) String() string {
 	switch {
+	case tg.ref != "":
+		return "ref " + tg.ref
 	case tg.text == "":
 		return fmt.Sprintf("%q", tg.css)
 	case tg.css == "":
@@ -350,9 +359,33 @@ func (tg target) String() string {
 	}
 }
 
-// all is a script expression for the elements the target matches.
+// all is a script expression for the elements the target matches. That of
+// a ref is the element of the ref, or none for a ref that names none, which
+// checkRef has refused with its reason before.
 func (tg target) all() string {
+	if tg.ref != "" {
+		return fmt.Sprintf("(() => { try { return [%s]; } catch (e) { return []; } })()", outline.Element(tg.ref))
+	}
 	return fmt.Sprintf("%s.all(%s, %s)", findScript, jsString(tg.css), jsString(tg.text))
+}
+
+// checkRef returns an action that fails at once for a ref that names no
+// element of the page, as one of a page the tab has left, rather than
+// waiting for it until the timeout.
+func checkRef(ref string) chromedp.Action[chromedp.Void] {
+	// The script gives the reason as a string, which reads better than the
+	// exception it is thrown in.
+	check := chromedp.Evaluate[string](fmt.Sprintf(`(() => { try { %s; return ""; } catch (e) { return String(e.message || e); } })()`, outline.Element(ref)))
+	return func(ctx context.Context, t *chromedp.Target) (chromedp.Void, error) {
+		reason, err := check(ctx, t)
+		if err != nil {
+			return chromedp.Void{}, fmt.Errorf("ref %s: %w", ref, err)
+		}
+		if reason != "" {
+			return chromedp.Void{}, fmt.Errorf("ref %s: %s", ref, reason)
+		}
+		return chromedp.Void{}, nil
+	}
 }
 
 // first is a script expression for the first element the target matches,
@@ -381,8 +414,8 @@ func (tg target) textScript() string {
 }
 
 // elementActions are the actions that act on an element, and so need
-// selector or has_text. press also takes them, but acts on the element that
-// has the focus without them.
+// selector, has_text or ref. press also takes them, but acts on the element
+// that has the focus without them.
 var elementActions = map[string]bool{
 	"wait_visible": true, "wait_not_visible": true, "wait_enabled": true, "wait_text": true,
 	"text": true, "value": true, "get_attribute": true, "get_html": true,
@@ -401,7 +434,9 @@ func (a *ChromeDPAction) checkTarget() error {
 			return fmt.Errorf("%s does not take has_text, as it acts on no element", a.Name)
 		}
 	case a.Name != "press" && a.target().empty():
-		return fmt.Errorf("%s needs selector or has_text, to find the element it acts on", a.Name)
+		return fmt.Errorf("%s needs selector, has_text or ref, to find the element it acts on", a.Name)
+	case a.Ref != "" && (a.Selector != "" || a.HasText != ""):
+		return fmt.Errorf("%s takes ref, or selector and has_text, but not both: a ref names its element alone", a.Name)
 	}
 	return nil
 }

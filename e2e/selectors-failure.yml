@@ -59,7 +59,7 @@ jobs:
 
 - name: No element
   steps:
-  - name: Clicks without selector or has_text
+  - name: Clicks without selector, has_text or ref
     uses: browser
     with:
       headless: true

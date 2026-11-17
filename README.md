@@ -61,7 +61,7 @@ Each entry of `actions` names its action in `name` and takes these fields:
 | `name` | all | The action, from the tables below |
 | `id` | actions that return something | The key for the result in `res.results` or `res.filepaths`. Without it the action's name is the key, so a later action of the same kind replaces the earlier result |
 | `url` | `navigate` | The address to open |
-| `selector` | actions on an element | A CSS selector. It finds elements in open shadow roots too. See [Finding an element](#finding-an-element) |
+| `selector` | actions on an element | A CSS selector, or `ref` in its place. It finds elements in open shadow roots too. See [Finding an element](#finding-an-element) |
 | `has_text` | actions on an element | Of the elements `selector` matches, or of all without it, take the innermost whose visible text contains this. See [Finding an element](#finding-an-element) |
 | `value` | `type`, `send_keys`, `press`, `set_value`, `select`, `set_user_verified` | The text to use. Of `press`, the key, as `Enter` or `Shift+Tab`. Of `set_user_verified`, `true` or `false` |
 | `attribute` | `get_attribute` | The attribute to read, as `href` or `[href]`. Of a list, only the first entry is read |
@@ -74,7 +74,7 @@ Each entry of `actions` names its action in `name` and takes these fields:
 | `cookie_name` | `get_cookie` | The name of the cookie to read |
 | `filter` | `read_page` | `all` reads the elements shown out of the viewport too, and `interactive` only those of the viewport one can act on. Without it, the elements shown in the viewport |
 | `depth` | `read_page` | How far containers, such as a form or a list, nest in the outline; `15` when unset |
-| `ref` | `read_page` | Read only the element of this ref, as an earlier `read_page` gave it, and what it holds |
+| `ref` | `read_page`, actions on an element | The ref of an element, as an earlier `read_page` gave it. Of `read_page`, read only that element and what it holds; of an action on an element, the element it acts on, in place of `selector` and `has_text`. See [Finding an element](#finding-an-element) |
 
 A `wait_text` takes at most one of `equals`, `contains`, `not_contains` and `matches`, and no other action takes them. An empty `contains` or `matches` is refused too, since any text would pass it, and so is an empty `not_contains`, since no text would. A workflow that sets them otherwise is refused before the browser starts.
 
@@ -82,7 +82,7 @@ An action that looks for an element waits until the element appears, and the ste
 
 ### Finding an element
 
-An action on an element takes `selector`, `has_text`, or both, and acts on the first element they match, in the order of the page, where the elements of a shadow root come right after its host. An action that needs an element and has neither is refused before the browser starts, and so is `has_text` on an action that acts on no element.
+An action on an element takes `selector`, `has_text`, or both, and acts on the first element they match, in the order of the page, where the elements of a shadow root come right after its host, or takes the `ref` of an element alone, as `read_page` gave it. An action that needs an element and has none of them is refused before the browser starts, and so are `has_text` and `ref` on an action that acts on no element, and `ref` beside `selector` or `has_text`.
 
 `selector` is a CSS selector, looked for in the document and in every open shadow root, so an element a component renders into its shadow root is found as one outside it is. Each root is matched on its own: `#host p` does not reach a `p` in the shadow root of `#host`, but `p` does. A closed shadow root is out of reach of the page's scripts, and of the action. A `selector` is CSS only: it is not an XPath, and not a text to look for.
 
@@ -98,6 +98,19 @@ An action on an element takes `selector`, `has_text`, or both, and acts on the f
 ```
 
 It keeps the elements whose visible text contains `has_text`, runs of spaces and line breaks being one space, and of them only the innermost, so that `has_text` alone finds the button rather than the card around it. An element slotted into a component is inside the slot it shows in, and an element with no box of its own, such as a `<slot>`, is not taken, as an action can neither click nor see it. The text is case-sensitive. A hidden element has no visible text, so it is found only once it is shown. Of an SVG, only the text it draws counts, not its `<title>`.
+
+`ref` names the element a `read_page` of the same document gave it, so a step can act on what it read without a selector, and a later step with [`session`](#keeping-the-browser-open) on what an earlier one read:
+
+```yaml
+        - name: read_page
+          id: outline
+          filter: interactive
+        # The outline has a line such as: button "Recovery codes" [ref_kqzm7]
+        - name: click
+          ref: ref_kqzm7
+```
+
+The action waits for the element of the ref as it waits for one of a selector, to be visible for a click. A ref that names no element of the page, as one of a page the tab has left, fails the action at once, with the reason, rather than once `timeout` runs out. See [Reading the page as an outline](#reading-the-page-as-an-outline).
 
 `text` and `wait_text` read the visible text of the element, and that of the open shadow roots in it, with the nodes a slot shows in its place: `innerText` leaves out both. So a `wait_text` on the element that holds a message body rendered into a shadow root sees the body, and `has_text` finds a component by the text it frames around what is slotted into it. The text of a shadow root is put together as `innerText` puts that of the document: a paragraph is parted from what is around it by a blank line, as a `<br>` makes a line of its own, and spaces run together as the style of the text has them.
 
@@ -374,7 +387,7 @@ main [ref_kqzm1]
 
 Containers, such as a form, a list or a navigation, nest the elements in them, and `depth` bounds how far, and what one can act on in a heading, as a link, comes below it; text that is not in an element of its own is a line `text "..."`. An element is named as assistive technology names it, by `aria-labelledby` before `aria-label`, and is `disabled` in a disabled fieldset too. The value of a password is read as dots, and the elements hidden from the page, by `display: none`, `visibility` or an `opacity` of 0 on them or on what holds them, or from assistive technology with `aria-hidden`, are left out, so a `ref` of one reads nothing, as are those out of the viewport unless `filter` is `all`. Open shadow roots are read as the page shows them. A page longer than 50,000 characters is cut, with a line that says so.
 
-A ref is `ref_`, four letters drawn for the document, and a number counted from 1 in the order the elements are first read. It names its element for as long as the element is in the document, so a later `read_page` with `ref` reads that element alone, as do the steps after it with [`session`](#keeping-the-browser-open), which drive the same document. A ref of a document the tab has left fails the action, which says to read the page again: the letters of the next document's refs are drawn anew, so that a ref kept from an earlier page does not name an element of this one. Reading writes nothing to the page, so the application sees nothing of it.
+A ref is `ref_`, four letters drawn for the document, and a number counted from 1 in the order the elements are first read. It names its element for as long as the element is in the document, so an action on an element acts on it by `ref`, and a later `read_page` with `ref` reads that element alone, as do the steps after it with [`session`](#keeping-the-browser-open), which drive the same document. A ref of a document the tab has left fails the action, which says to read the page again: the letters of the next document's refs are drawn anew, so that a ref kept from an earlier page does not name an element of this one. Reading writes nothing to the page, so the application sees nothing of it.
 
 `page_text` reads the text the page shows, as `text` reads that of an element, with the main content, `main` or `role=main`, first.
 

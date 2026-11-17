@@ -102,6 +102,24 @@ jobs:
     test: res.code == 0
     echo: "{{res.stdout}}"
 
+  - name: A ref of a page the tab has left fails at once
+    uses: shell
+    with:
+      cmd: |
+        dir=$(mktemp -d)
+        start=$(date +%s)
+        EVIDENCE_DIR="$dir" probe e2e/ref-failure.yml
+        echo "exit=$?"
+        echo "took=$(( $(date +%s) - start ))"
+        rm -rf "$dir"
+      timeout: 1m
+      env:
+        DISPLAY: ":99"
+    test: |
+      res.stdout contains "exit=3" &&
+      res.stdout matches 'ref (ref_[a-z]{4}1): ref_[a-z]{4}1 is not on the page any more; read the page again' &&
+      int(res.stdout | split("took=") | last() | trim()) < 15
+
   - name: passkey.yml
     uses: shell
     with:
@@ -238,7 +256,7 @@ jobs:
       res.stdout contains 'wait_text "button" with text "削除": no visible element matched' &&
       res.stdout contains 'wait_text "#closed-host": the text was "", want it to contain "closed"' &&
       res.stdout contains "navigate does not take has_text, as it acts on no element" &&
-      res.stdout contains "click needs selector or has_text, to find the element it acts on"
+      res.stdout contains "click needs selector, has_text or ref, to find the element it acts on"
 
   - name: A failure names the errors the page wrote
     uses: shell

@@ -50,8 +50,8 @@ func TestCheckTarget(t *testing.T) {
 		{"both", ChromeDPAction{Name: "click", Selector: "button", HasText: "保存"}, ""},
 		{"press on the focused element", ChromeDPAction{Name: "press", Value: "Enter"}, ""},
 		{"press with has_text", ChromeDPAction{Name: "press", HasText: "検索", Value: "Enter"}, ""},
-		{"no element", ChromeDPAction{Name: "click"}, "click needs selector or has_text"},
-		{"no element to read", ChromeDPAction{Name: "wait_text"}, "wait_text needs selector or has_text"},
+		{"no element", ChromeDPAction{Name: "click"}, "click needs selector, has_text or ref"},
+		{"no element to read", ChromeDPAction{Name: "wait_text"}, "wait_text needs selector, has_text or ref"},
 		{"has_text on navigate", ChromeDPAction{Name: "navigate", URL: "http://localhost", HasText: "x"}, "navigate does not take has_text"},
 		{"has_text on get_cookie", ChromeDPAction{Name: "get_cookie", CookieName: "sid", HasText: "x"}, "get_cookie does not take has_text"},
 		// wait_ready has always ignored selector, so it still does.

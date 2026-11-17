@@ -58,6 +58,14 @@ func Expr(fn string, args ...any) (string, error) {
 	return Script + ";\nwindow.__probeOutline." + fn + "(" + strings.Join(encoded, ", ") + ")", nil
 }
 
+// Element returns an expression for the element of ref, which throws for a
+// ref that names no element of the document, as one of a page the tab has
+// left, with an error that says to read the page again.
+func Element(ref string) string {
+	b, _ := json.Marshal(ref)
+	return "(() => { " + Script + "; return window.__probeOutline.element(" + string(b) + "); })()"
+}
+
 // CheckFilter returns an error for a filter Read does not take.
 func CheckFilter(filter string) error {
 	switch filter {
