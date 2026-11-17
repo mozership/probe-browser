@@ -76,7 +76,7 @@ func TestRequestSet(t *testing.T) {
 	// No answer, a status of 500, one given up on, one not of HTTP, and one
 	// not ended.
 	event(t, s, sent, `{"requestId":"x","timestamp":1,"request":{"method":"GET","url":"https://b/"}}`)
-	event(t, s, failed, `{"requestId":"x","timestamp":1.1,"errorText":"net::ERR_CONNECTION_REFUSED"}`)
+	event(t, s, failed, `{"requestId":"x","timestamp":31,"errorText":"net::ERR_CONNECTION_TIMED_OUT"}`)
 	event(t, s, sent, `{"requestId":"e","timestamp":1,"request":{"method":"GET","url":"https://a/broken"}}`)
 	event(t, s, resp, `{"requestId":"e","response":{"status":500}}`)
 	event(t, s, finished, `{"requestId":"e","timestamp":1.1}`)
@@ -90,8 +90,17 @@ func TestRequestSet(t *testing.T) {
 	if s.requests.Count != 5 {
 		t.Errorf("count %d, want the five over HTTP that ended", s.requests.Count)
 	}
-	if top := s.requests.Slowest[0]; top.URL != "https://a/done" || top.Method != "GET" || top.Status != 200 || top.DurationMS != 2000 {
-		t.Errorf("the slowest is %+v, want the redirect, its last URL, timed from the first", top)
+	// A request that failed is timed to when it did.
+	if top := s.requests.Slowest[0]; top.URL != "https://b/" || top.Error != "net::ERR_CONNECTION_TIMED_OUT" || top.DurationMS != 30000 {
+		t.Errorf("the slowest is %+v, want the request that timed out", top)
+	}
+	if next := s.requests.Slowest[1]; next.URL != "https://a/done" || next.Method != "GET" || next.Status != 200 || next.DurationMS != 2000 {
+		t.Errorf("the next slowest is %+v, want the redirect, its last URL, timed from the first", next)
+	}
+	for _, r := range s.requests.Slowest {
+		if r.URL == "https://a/gone" {
+			t.Errorf("a request given up on is timed: %+v", r)
+		}
 	}
 	var got []string
 	for _, e := range s.errs {
@@ -99,7 +108,7 @@ func TestRequestSet(t *testing.T) {
 	}
 	want := []string{
 		"GET https://a/big 200 net::ERR_CONTENT_LENGTH_MISMATCH",
-		"GET https://b/ net::ERR_CONNECTION_REFUSED",
+		"GET https://b/ net::ERR_CONNECTION_TIMED_OUT",
 		"GET https://a/broken 500",
 	}
 	if strings.Join(got, "; ") != strings.Join(want, "; ") {

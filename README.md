@@ -226,7 +226,7 @@ When every action succeeds, the step sees:
 | `res.filepaths` | Object | Where the screenshots, the storage states and the passkeys were saved, by `id` or action name |
 | `res.console_errors` | List | The errors the page wrote to its console while the actions ran, in order. See [Checking the console](#checking-the-console) |
 | `res.network_errors` | List | The requests of the page that failed while the actions ran, each with `method`, `url`, `status` and `error`. See [Checking the requests](#checking-the-requests) |
-| `res.requests` | Object | How many requests of the page ended while the actions ran, `count`, and the five that took longest, `slowest`, each with `method`, `url`, `status` and `duration_ms`. See [Checking the requests](#checking-the-requests) |
+| `res.requests` | Object | How many requests of the page ended while the actions ran, `count`, and the five that took longest, `slowest`, each with `method`, `url`, `status`, `error` and `duration_ms`. See [Checking the requests](#checking-the-requests) |
 | `rt.duration` | String | How long the step took, such as `"663.268333ms"` |
 | `status` | Integer | `0` |
 
@@ -703,7 +703,7 @@ When an action fails, the failure message names the first few of them, as one is
 
 ### Checking the requests
 
-The step records the requests the page sends over HTTP or HTTPS while the actions run, as the console. A request the server answers with a status of 400 or more, and one that gets no answer, as when the server cannot be reached, are in `res.network_errors`; a request the page or the browser gave up on, as when the page went on to another, is not. `res.requests` counts the requests that ended, and keeps the five that took longest, from when they were sent, their redirects included, to their last byte.
+The step records the requests the page sends over HTTP or HTTPS while the actions run, as the console. A request the server answers with a status of 400 or more, and one that gets no answer, as when the server cannot be reached, are in `res.network_errors`; a request the page or the browser gave up on, as when the page went on to another, is not. `res.requests` counts the requests that ended, and keeps the five that took longest, from when they were sent, their redirects included, to their last byte, or to when they failed, with `error`, as one that took long to time out.
 
 ```yaml
   - name: The dashboard loads without failed requests, and fast

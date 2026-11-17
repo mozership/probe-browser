@@ -49,15 +49,18 @@ type Requests struct {
 	// Count is how many finished or failed.
 	Count int `map:"count"`
 	// Slowest are those that took longest from when they were sent, their
-	// redirects included, to their last byte, the slowest first.
+	// redirects included, to their last byte, or to when they failed, the
+	// slowest first.
 	Slowest []SlowRequest `map:"slowest"`
 }
 
-// SlowRequest is a request that finished, and how long it took.
+// SlowRequest is a request that ended, and how long it took: to its last
+// byte, or to when it failed, with why.
 type SlowRequest struct {
 	Method     string `map:"method"`
 	URL        string `map:"url"`
 	Status     int64  `map:"status"`
+	Error      string `map:"error"`
 	DurationMS int64  `map:"duration_ms"`
 }
 
@@ -224,9 +227,11 @@ func (s *requestSet) settle() {
 		case !q.failed && q.status >= 400:
 			s.errs = append(s.errs, NetworkError{Method: q.method, URL: q.url, Status: q.status})
 		}
-		if !q.failed {
+		// A request that failed is timed to when it did, as one that took
+		// long to time out; one given up on is not timed.
+		if !q.canceled {
 			s.requests.Slowest = slowest(s.requests.Slowest, SlowRequest{
-				Method: q.method, URL: q.url, Status: q.status,
+				Method: q.method, URL: q.url, Status: q.status, Error: q.errText,
 				DurationMS: int64(math.Round((q.ended - q.sent) * 1000)),
 			})
 		}
