@@ -184,32 +184,68 @@ func cleanupSessions(runID string) error {
 	if err != nil {
 		return err
 	}
-	profiles, err := filepath.Glob(filepath.Join(dir, "browser-*"))
-	if err != nil {
+	// The directory is read rather than globbed, so that a cache directory
+	// whose path holds a character of a pattern, such as [, is taken as it
+	// is.
+	entries, err := os.ReadDir(dir)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
-	for _, p := range profiles {
-		b, err := os.ReadFile(filepath.Join(p, pidFile))
-		if err != nil {
-			continue
-		}
-		if pid, err := strconv.Atoi(string(b)); err == nil {
-			stopGroup(pid, p)
+	for _, e := range entries {
+		if e.IsDir() && strings.HasPrefix(e.Name(), "browser-") {
+			stopProfile(filepath.Join(dir, e.Name()))
 		}
 	}
 	return os.RemoveAll(dir)
+}
+
+// stopProfile stops the browser whose profile is profile: the one its PID
+// file names, and any other process running with the profile, as a browser
+// whose step was stopped before it wrote the file.
+func stopProfile(profile string) {
+	groups := profileGroups(profile)
+	if b, err := os.ReadFile(filepath.Join(profile, pidFile)); err == nil {
+		if pid, err := strconv.Atoi(string(b)); err == nil {
+			groups = append(groups, pid)
+		}
+	}
+	for _, g := range groups {
+		stopGroup(g, profile)
+	}
+}
+
+// profileGroups returns the process groups of the processes that run with
+// the profile, as their command lines name it.
+func profileGroups(profile string) []int {
+	out, err := exec.Command("ps", "-ax", "-o", "pgid=,command=").Output()
+	if err != nil {
+		return nil
+	}
+	var groups []int
+	for line := range strings.Lines(string(out)) {
+		pgid, command, ok := strings.Cut(strings.TrimSpace(line), " ")
+		if !ok || !namesProfile(command, profile) {
+			continue
+		}
+		if g, err := strconv.Atoi(pgid); err == nil && g > 1 {
+			groups = append(groups, g)
+		}
+	}
+	return groups
+}
+
+// namesProfile reports whether the command line runs a browser with the
+// profile, and not with another whose path begins with it.
+func namesProfile(command, profile string) bool {
+	flag := "--user-data-dir=" + profile
+	return strings.Contains(command, flag+" ") || strings.HasSuffix(strings.TrimSpace(command), flag)
 }
 
 // discardSession stops the browser a step started and removes its profile,
 // for a step that failed: Probe keeps no state a failed step returns, so no
 // later step could reach the browser.
 func discardSession(s *session) {
-	b, err := os.ReadFile(filepath.Join(s.Dir, pidFile))
-	if err == nil {
-		if pid, err := strconv.Atoi(string(b)); err == nil {
-			stopGroup(pid, s.Dir)
-		}
-	}
+	stopProfile(s.Dir)
 	_ = os.RemoveAll(s.Dir)
 }
 
@@ -246,7 +282,7 @@ func groupAlive(pgid int) bool {
 // profile, as its command line names it.
 func runsProfile(pid int, profile string) bool {
 	out, err := exec.Command("ps", "-o", "command=", "-p", strconv.Itoa(pid)).Output()
-	return err == nil && strings.Contains(string(out), "--user-data-dir="+profile)
+	return err == nil && namesProfile(string(out), profile)
 }
 
 // waitGroupGone reports whether every process of the group exits within d.

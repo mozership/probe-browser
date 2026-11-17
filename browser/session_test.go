@@ -209,12 +209,12 @@ func TestRunStep_AFailedFirstStepLeavesNoBrowser(t *testing.T) {
 	}
 }
 
-// startGroup starts sh running script as the leader of a process group of
-// its own, as a kept browser runs, and returns its PID once it has exited
-// when exit is set.
-func startGroup(t *testing.T, script string, exit bool) int {
+// startGroup starts sh running script, with args after it on its command
+// line, as the leader of a process group of its own, as a kept browser
+// runs, and returns its PID, once it has exited when exit is set.
+func startGroup(t *testing.T, script string, exit bool, args ...string) int {
 	t.Helper()
-	cmd := exec.Command("sh", "-c", script)
+	cmd := exec.Command("sh", append([]string{"-c", script}, args...)...)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
@@ -247,5 +247,51 @@ func TestStopGroup_StopsWhatTheBrowserLeft(t *testing.T) {
 	stopGroup(pid, filepath.Join(t.TempDir(), "browser-x"))
 	if groupAlive(pid) {
 		t.Error("the processes the leader left are still running")
+	}
+}
+
+func TestNamesProfile(t *testing.T) {
+	p := "/c/sessions/ab/browser-1"
+	for command, want := range map[string]bool{
+		"chrome --headless --user-data-dir=" + p + " about:blank": true,
+		"chrome --user-data-dir=" + p:                             true,
+		"chrome --user-data-dir=" + p + "2 about:blank":           false,
+		"sleep 30": false,
+	} {
+		if got := namesProfile(command, p); got != want {
+			t.Errorf("%q: %v, want %v", command, got, want)
+		}
+	}
+}
+
+// TestCleanupSessions_FindsABrowserWithoutItsPIDFile stops a process that
+// runs with a profile that has no PID file, as a browser whose step was
+// stopped before it wrote one, under a cache directory whose path holds a
+// character of a glob pattern.
+func TestCleanupSessions_FindsABrowserWithoutItsPIDFile(t *testing.T) {
+	t.Setenv(CacheDirEnv, filepath.Join(t.TempDir(), "cache[1"))
+	run := "run-nopid-" + strconv.Itoa(os.Getpid())
+	dir, err := sessionsDir(run)
+	if err != nil {
+		t.Fatal(err)
+	}
+	profile := filepath.Join(dir, "browser-1")
+	if err := os.MkdirAll(profile, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	// The shell stands in for the browser, the profile on its command line;
+	// the : after sleep keeps it from replacing itself with sleep.
+	pid := startGroup(t, "sleep 30; :", false, "--user-data-dir="+profile, "about:blank")
+	if !runsProfile(pid, profile) {
+		t.Fatal("the stand-in browser does not show the profile on its command line")
+	}
+	if err := cleanupSessions(run); err != nil {
+		t.Fatal(err)
+	}
+	if groupAlive(pid) {
+		t.Error("the browser without a PID file is still running")
+	}
+	if _, err := os.Stat(dir); !os.IsNotExist(err) {
+		t.Errorf("the run's directory is still there: %v", err)
 	}
 }
