@@ -38,7 +38,11 @@ func (a *ChromeDPAction) givesPoint() bool {
 // an action that does not take them, and x without y.
 func (a *ChromeDPAction) checkPointer() error {
 	x, y := slices.Contains(a.given, "x"), slices.Contains(a.given, "y")
+	// The x and y of capture_screenshot are the corner of its region,
+	// which regionOf checks.
+	region := a.Name == "capture_screenshot"
 	switch {
+	case region:
 	case (x || y) && !pointActions[a.Name]:
 		return fmt.Errorf("%s does not take x or y: click, double_click, right_click, hover and wheel do", a.Name)
 	case x != y:
@@ -277,7 +281,7 @@ func parseModifiers(names []string) ([]chromedp.Modifier, error) {
 
 // pointerFieldKeys are the fields of the mouse whose zero value a workflow
 // can mean, as x: 0, so that whether it wrote them is kept.
-var pointerFieldKeys = []string{"x", "y", "button", "count", "modifiers", "direction", "amount", "repeat"}
+var pointerFieldKeys = []string{"x", "y", "button", "count", "modifiers", "direction", "amount", "repeat", "width", "height", "scale"}
 
 // markGivenPointerFields records which of the fields of the mouse each
 // action of data was written with.
