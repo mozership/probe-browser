@@ -928,11 +928,9 @@ func (req *Req) do() (*Result, error) {
 			}
 			// The page's timings as the step begins, which tell what
 			// ended since the step before, whatever the actions do to the
-			// page. A browser the step starts keeps more of them in each
-			// document it opens.
-			if !req.attaches() {
-				_, _ = chromedp.Call(ctx, page.AddScriptToEvaluateOnNewDocument, page.AddScriptToEvaluateOnNewDocumentParams{Source: timingBuffer})
-			}
+			// page. Each document the page opens while the step is
+			// attached keeps more of them.
+			_, _ = chromedp.Call(ctx, page.AddScriptToEvaluateOnNewDocument, page.AddScriptToEvaluateOnNewDocumentParams{Source: timingBuffer})
 			net.first = readTimings(ctx, t)
 			return chromedp.Void{}, nil
 		}

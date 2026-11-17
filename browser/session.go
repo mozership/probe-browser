@@ -68,8 +68,16 @@ type sessionCall struct {
 // stoppedFromState reads when the step before stopped recording, as the
 // state of the job names it, 0 when it does not.
 func stoppedFromState(state map[string]any) float64 {
-	v, _ := state["network_stopped"].(float64)
-	return v
+	// The runner gives a number of no fraction as an int64.
+	switch v := state["network_stopped"].(type) {
+	case float64:
+		return v
+	case int64:
+		return float64(v)
+	case int:
+		return float64(v)
+	}
+	return 0
 }
 
 // pendingFromState reads the requests the state of the job names pending.

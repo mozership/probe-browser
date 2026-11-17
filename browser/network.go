@@ -86,6 +86,9 @@ type netRequest struct {
 	// wall is when it was sent, in milliseconds of the Unix epoch, by
 	// which the page's timing of it is told from another's of its URL.
 	wall float64
+	// firstURL is the URL it was asked for, before any redirect, by which
+	// the page names it in its timings.
+	firstURL string
 	// carried is a request an earlier step left pending, whose response
 	// can have come between the steps, unseen.
 	carried bool
@@ -160,8 +163,10 @@ type pendingRequest struct {
 	Sent     float64 `json:"sent"`
 	Status   int64   `json:"status,omitempty"`
 	Response bool    `json:"response,omitempty"`
-	// Wall is when it was sent, in milliseconds of the Unix epoch.
-	Wall float64 `json:"wall,omitempty"`
+	// Wall is when it was sent, in milliseconds of the Unix epoch, and
+	// FirstURL the URL it was asked for, before any redirect.
+	Wall     float64 `json:"wall,omitempty"`
+	FirstURL string  `json:"first_url,omitempty"`
 }
 
 // maxPending bounds the requests a step leaves to the next, the latest
@@ -242,6 +247,14 @@ func (r *networkRecorder) waiting() bool {
 	return false
 }
 
+// askedURL returns the URL q was asked for, before any redirect.
+func (q *netRequest) askedURL() string {
+	if q.firstURL != "" {
+		return q.firstURL
+	}
+	return q.url
+}
+
 func isHTTP(url string) bool {
 	return strings.HasPrefix(url, "http:") || strings.HasPrefix(url, "https:")
 }
@@ -279,6 +292,9 @@ func (s *requestSet) apply(method string, raw jsonv2.Value) error {
 		if q.sent == 0 {
 			q.sent = ev.Timestamp.Float64()
 			q.wall = ev.WallTime.Float64() * 1000
+			if ev.Request != nil {
+				q.firstURL = ev.Request.URL
+			}
 		}
 		if ev.Request != nil {
 			q.method, q.url = ev.Request.Method, ev.Request.URL
@@ -328,7 +344,10 @@ func (s *requestSet) settle() {
 		// A request carried from a step before that finished is counted
 		// though its response came unseen, between the steps: of a status
 		// not known, 0, which is not taken for an error.
-		if q.gone || (q.sent == 0 && !q.timed) || q.ended == 0 || (!q.failed && !q.gotResponse && !q.carried) || q.notHTTP {
+		// One the step saw answered and end, and not sent, is counted
+		// though it cannot be timed.
+		unsent := q.sent == 0 && !q.timed
+		if q.gone || (unsent && (!q.gotResponse || q.url == "")) || q.ended == 0 || (!q.failed && !q.gotResponse && !q.carried) || q.notHTTP {
 			continue
 		}
 		s.requests.Count++
@@ -340,7 +359,7 @@ func (s *requestSet) settle() {
 		}
 		// A request that failed is timed to when it did, as one that took
 		// long to time out; one given up on is not timed.
-		if !q.canceled {
+		if !q.canceled && !unsent {
 			ms := int64(math.Round((q.ended - q.sent) * 1000))
 			if q.timed {
 				ms = q.timedMS
@@ -391,26 +410,28 @@ func (r *networkRecorder) stop(timings func() *pageTimings) ([]NetworkError, Req
 	}
 	for _, p := range r.pending {
 		q := set.of(network.RequestID(p.ID))
-		q.method, q.url, q.sent, q.status, q.gotResponse, q.wall = p.Method, p.URL, p.Sent, p.Status, p.Response, p.Wall
+		q.method, q.url, q.sent, q.status, q.gotResponse, q.wall, q.firstURL = p.Method, p.URL, p.Sent, p.Status, p.Response, p.Wall, p.FirstURL
 		q.carried = true
 		q.notHTTP = !isHTTP(q.url)
 	}
+	// A request sent while it waits for the quiet, as one a timer of the
+	// last action sends, is waited for too, within networkSettle.
 	settle := time.Now().Add(networkSettle)
+	var drain time.Time
 	for {
 		r.mu.Lock()
-		waiting := r.waiting()
+		quiet, waiting := time.Since(r.last), r.waiting()
 		r.mu.Unlock()
-		if !waiting || !time.Now().Before(settle) {
-			break
+		now := time.Now()
+		if waiting && now.Before(settle) {
+			drain = time.Time{}
+			time.Sleep(10 * time.Millisecond)
+			continue
 		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	drain := time.Now().Add(networkDrain)
-	for {
-		r.mu.Lock()
-		quiet := time.Since(r.last)
-		r.mu.Unlock()
-		if quiet >= networkIdle || !time.Now().Before(drain) {
+		if drain.IsZero() {
+			drain = now.Add(networkDrain)
+		}
+		if quiet >= networkIdle || !now.Before(drain) {
 			break
 		}
 		time.Sleep(max(time.Millisecond, min(networkIdle-quiet, time.Until(drain))))
@@ -426,7 +447,12 @@ func (r *networkRecorder) stop(timings func() *pageTimings) ([]NetworkError, Req
 		}
 	}
 	if timings != nil {
-		set.reconcile(r.since, r.started, r.first, timings())
+		last := timings()
+		set.reconcile(r.since, r.started, stopped, r.first, last)
+		// What ended until the page read last is this step's.
+		if last != nil {
+			stopped = last.read
+		}
 	}
 	set.settle()
 	return set.errs, set.requests, set.pending(), stopped

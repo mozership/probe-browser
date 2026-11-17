@@ -256,3 +256,29 @@ func TestStop_WaitsForARequestInFlight(t *testing.T) {
 		t.Errorf("stop took %s, want %s, as the request never ends", d, networkSettle)
 	}
 }
+
+// TestStop_WaitsForARequestSentWhileQuiet waits for a request sent while
+// it waits for the events to go quiet, as one a timer of the last action
+// sends.
+func TestStop_WaitsForARequestSentWhileQuiet(t *testing.T) {
+	_, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	r := &networkRecorder{cancel: cancel, events: map[string][]jsonv2.Value{}, last: time.Now(), inflight: map[string]bool{}}
+	go func() {
+		time.Sleep(20 * time.Millisecond)
+		r.mu.Lock()
+		r.track(network.RequestWillBeSent.Method, jsonv2.Value(`{"requestId":"b","request":{"url":"https://a/later","method":"GET"}}`))
+		r.last = time.Now()
+		r.mu.Unlock()
+		time.Sleep(400 * time.Millisecond)
+		r.mu.Lock()
+		r.track(network.LoadingFinished.Method, jsonv2.Value(`{"requestId":"b","timestamp":2}`))
+		r.last = time.Now()
+		r.mu.Unlock()
+	}()
+	start := time.Now()
+	r.stop(nil)
+	if d := time.Since(start); d < 420*time.Millisecond || d > networkSettle {
+		t.Errorf("stop took %s, want it to wait for the request sent while quiet", d)
+	}
+}
