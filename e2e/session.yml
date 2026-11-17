@@ -1,0 +1,69 @@
+name: Browser Session
+description: |
+  Keeps the browser of a job open from one step to the next with session:
+  a step types into a field, and the next finds the page as the first left
+  it. Each job keeps a browser of its own, and Probe stops them once the
+  run is over.
+  Serve the fixture page first, as e2e/workflow.yml does:
+  go run ./e2e/server
+actions:
+  browser: ./action
+vars:
+  url: "{{ URL ?? 'http://localhost:8090' }}"
+jobs:
+- name: Keep the browser
+  steps:
+  - name: Type into a field
+    uses: browser
+    with:
+      headless: true
+      session: true
+      timeout: 30s
+      actions:
+      - name: navigate
+        url: "{{vars.url}}/input.html"
+      - name: set_value
+        selector: "#q"
+        value: kept
+    test: res.code == 0
+
+  - name: The next step finds the page as it was left
+    uses: browser
+    with:
+      session: true
+      timeout: 30s
+      actions:
+      - name: text
+        id: title
+        selector: h1
+      - name: value
+        id: q
+        selector: "#q"
+    test: |
+      res.code == 0 &&
+      res.results.title == "Input" &&
+      res.results.q == "kept"
+
+- name: Another job keeps a browser of its own
+  steps:
+  - name: Open the fixture page
+    uses: browser
+    with:
+      headless: true
+      session: true
+      timeout: 30s
+      actions:
+      - name: navigate
+        url: "{{vars.url}}/"
+    test: res.code == 0
+
+  - name: The page is that of this job
+    uses: browser
+    with:
+      session: true
+      timeout: 30s
+      actions:
+      - name: text
+        id: title
+        selector: h1
+    test: res.code == 0 && res.results.title == "Probe Browser Fixture"

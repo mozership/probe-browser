@@ -3,6 +3,7 @@ package browser
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"iter"
 	"maps"
@@ -196,9 +197,16 @@ type Req struct {
 	// without a user. Nil means the platform's own, as without it. It has
 	// no map tag, as parseData reads it: it takes true as well as a map.
 	VirtualAuthenticator *authenticatorOptions
-	Timeout              time.Duration
-	cb                   *Callback
-	browserRunner        BrowserRunner
+	// Session keeps the browser open for the steps of the job after this
+	// one that set it too: the first starts it, and the others drive the
+	// tab it left as it left it. Probe stops it once the run is over.
+	Session bool `map:"session"`
+	Timeout time.Duration
+	cb      *Callback
+	// session is what the runner gave a step that keeps its browser; nil
+	// for a step called without one, as Request is.
+	session       *sessionCall
+	browserRunner BrowserRunner
 	// capture takes the page as it is when the actions fail. Nil means
 	// capturing it through browserRunner; tests replace it.
 	capture func(ctx context.Context) (screenshot []byte, html, url string, err error)
@@ -326,12 +334,7 @@ func (req *Req) createBrowserContext(browserDeadline time.Time) (context.Context
 
 	allocBaseCtx, allocBaseCancel := context.WithDeadline(context.Background(), browserDeadline)
 	allocCtx, allocCancel := chromedp.NewExecAllocator(allocBaseCtx, cdpOpts...)
-	ctx, cancel := chromedp.NewContext(allocCtx, chromedp.WithDebugf(func(s string, i ...any) {
-		// Callback
-		if req.cb != nil && req.cb.withInBrowser != nil {
-			req.cb.withInBrowser(s, i)
-		}
-	}))
+	ctx, cancel := chromedp.NewContext(allocCtx, req.debugf())
 
 	// Combine cancellation functions
 	cancelFunc := func() {
@@ -341,6 +344,57 @@ func (req *Req) createBrowserContext(browserDeadline time.Time) (context.Context
 	}
 
 	return ctx, cancelFunc, nil
+}
+
+// debugf passes what chromedp logs to the callback.
+func (req *Req) debugf() chromedp.ContextOption {
+	return chromedp.WithDebugf(func(s string, i ...any) {
+		if req.cb != nil && req.cb.withInBrowser != nil {
+			req.cb.withInBrowser(s, i)
+		}
+	})
+}
+
+// attaches reports whether the step drives the browser an earlier step of
+// the job kept, rather than one it starts.
+func (req *Req) attaches() bool {
+	return req.Session && req.session != nil && req.session.kept != nil
+}
+
+// openBrowser returns the context of the tab the actions run in: that of a
+// new browser, which cancel closes, or, for a step that keeps its browser,
+// that of the browser of the job, which cancel leaves open.
+func (req *Req) openBrowser(browserDeadline time.Time) (context.Context, context.CancelFunc, error) {
+	if !req.Session {
+		ctx, cancel, err := req.createBrowserContext(browserDeadline)
+		if err != nil {
+			return nil, nil, err
+		}
+		if err := req.browserRunner.Start(ctx); err != nil {
+			cancel()
+			// There is no page to capture, but say so, as every other
+			// failure of the actions says whether the page was saved.
+			return nil, nil, fmt.Errorf("%w (the page could not be captured: the browser did not start)", err)
+		}
+		return ctx, cancel, nil
+	}
+	if req.session == nil {
+		return nil, nil, errors.New("session needs a Probe that cleans up after a run, v1.30.0 or later, as it stops the browser then")
+	}
+	if req.Passkeys != "" || req.VirtualAuthenticator != nil {
+		return nil, nil, errors.New("session does not take passkeys or virtual_authenticator yet")
+	}
+	base, baseCancel := context.WithDeadline(context.Background(), browserDeadline)
+	open := req.startSession
+	if req.attaches() {
+		open = req.attachSession
+	}
+	ctx, cancel, err := open(base)
+	if err != nil {
+		baseCancel()
+		return nil, nil, err
+	}
+	return ctx, func() { cancel(); baseCancel() }, nil
 }
 
 // jsString returns s as a JavaScript string literal. A selector such as
@@ -399,7 +453,9 @@ func (req *Req) buildActionTasks() ([]chromedp.Action[chromedp.Void], error) {
 		tasks = append(tasks, addVirtualAuthenticator(authenticator, creds, va))
 	}
 
-	if req.StorageState != "" {
+	// A step that attaches to the browser of the job finds it as the step
+	// before left it, which loading a state would take back to about:blank.
+	if req.StorageState != "" && !req.attaches() {
 		s, err := readStorageState(req.StorageState)
 		if err != nil {
 			return nil, err
@@ -645,12 +701,6 @@ func (req *Req) do() (*Result, error) {
 	start := time.Now()
 	deadline := start.Add(req.Timeout)
 
-	browserCtx, cancel, err := req.createBrowserContext(deadline.Add(evidenceGrace))
-	if err != nil {
-		return nil, err
-	}
-	defer cancel()
-
 	tasks, err := req.buildActionTasks()
 	if err != nil {
 		return nil, err
@@ -661,11 +711,11 @@ func (req *Req) do() (*Result, error) {
 		req.cb.before(req)
 	}
 
-	if err := req.browserRunner.Start(browserCtx); err != nil {
-		// There is no page to capture, but say so, as every other failure
-		// of the actions says whether the page was saved.
-		return nil, fmt.Errorf("%w (the page could not be captured: the browser did not start)", err)
+	browserCtx, cancel, err := req.openBrowser(deadline.Add(evidenceGrace))
+	if err != nil {
+		return nil, err
 	}
+	defer cancel()
 
 	var console *consoleRecorder
 	if c, ok := req.browserRunner.(consoleReader); ok {
@@ -783,8 +833,15 @@ func saveEvidence(dir string, screenshot []byte, html string) (string, string, e
 }
 
 func Request(data map[string]any, opts ...Option) (map[string]any, error) {
+	return request(data, nil, opts...)
+}
+
+// request runs the actions of data, in the browser of the job for a step
+// that keeps it, when the runner gave sc.
+func request(data map[string]any, sc *sessionCall, opts ...Option) (map[string]any, error) {
 	start := time.Now()
 	req := NewReq()
+	req.session = sc
 
 	if err := req.parseData(data, opts); err != nil {
 		return createErrorResult(start, req, err)
