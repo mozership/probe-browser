@@ -112,7 +112,10 @@ func TestRunStep_KeepsTheBrowser(t *testing.T) {
 	procs := &actionrpc.Processes{}
 	call := func(state map[string]any, actions ...any) (map[string]any, map[string]any, error) {
 		return a.RunStep(actionrpc.Call{
-			With:      map[string]any{"session": true, "headless": true, "timeout": "20s", "actions": actions},
+			// A runner of CI under -race can take more than 20 seconds to
+			// start the browser and fill the field. The page is saved in
+			// the test's directory when the step fails.
+			With:      map[string]any{"session": true, "headless": true, "timeout": "60s", "evidence_dir": t.TempDir(), "actions": actions},
 			State:     state,
 			Step:      actionrpc.Step{RunID: run},
 			Cleanups:  &actionrpc.Cleanups{},
