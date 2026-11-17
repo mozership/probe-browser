@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Probe Browser One Tab Fixture</title>
+  <link rel="icon" href="data:,">
+</head>
+<body>
+  <h1>One tab</h1>
+  <!-- A link and a button that open a window of their own. -->
+  <a id="new-window" href="/index.html" target="_blank">The fixture page in a new window</a>
+  <button id="open" type="button">Open the input page</button>
+  <button id="hover-me" type="button">Hover me</button>
+  <p id="entered">none</p>
+  <script>
+    document.getElementById("open").addEventListener("click", () => window.open("/input.html"));
+    // mouseenter comes of the mouse moving onto the button, not of a
+    // mouseover event sent to it.
+    document.getElementById("hover-me").addEventListener("mouseenter", () => {
+      document.getElementById("entered").textContent = "entered";
+    });
+  </script>
+</body>
+</html>

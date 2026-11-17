@@ -231,6 +231,10 @@ type Req struct {
 	// one that set it too: the first starts it, and the others drive the
 	// tab it left as it left it. Probe stops it once the run is over.
 	Session bool `map:"session"`
+	// OneTab keeps the step in one tab: a link that would open a window, by
+	// its target, and window.open, open their page in the tab instead, so
+	// that the actions after go on with it.
+	OneTab  bool `map:"one_tab"`
 	Timeout time.Duration
 	cb      *Callback
 	// session is what the runner gave a step that keeps its browser; nil
@@ -501,6 +505,10 @@ func (req *Req) buildActionTasks() ([]chromedp.Action[chromedp.Void], error) {
 
 	// A step that attaches to the browser of the job finds it as the step
 	// before left it, which loading a state would take back to about:blank.
+	if req.OneTab {
+		tasks = append(tasks, oneTab())
+	}
+
 	if req.StorageState != "" && !req.attaches() {
 		s, err := readStorageState(req.StorageState)
 		if err != nil {
@@ -672,7 +680,9 @@ func (req *Req) buildActionTasks() ([]chromedp.Action[chromedp.Void], error) {
 			}
 			action.reText = &text
 		case "hover":
-			if tg.point != nil {
+			// At a point, and on the element of a ref, the mouse moves there,
+			// as a user's does; on a selector, the event is sent, as before.
+			if tg.point != nil || tg.ref != "" {
 				tasks = append(tasks, mouseMove(tg))
 				break
 			}

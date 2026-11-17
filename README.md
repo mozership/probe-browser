@@ -47,6 +47,7 @@ These go directly under `with`.
 | `evidence_dir` | String | the temporary directory | Where the page is saved when the actions fail. See [Page at failure](#page-at-failure) |
 | `storage_state` | String | none | A file `save_storage_state` wrote, whose cookies and localStorage the browser starts with. See [Carrying a login over](#carrying-a-login-over) |
 | `passkeys` | String | none | A file `save_passkeys` wrote, whose passkeys the virtual authenticator starts with. Without `virtual_authenticator`, it starts one of the defaults. See [Carrying a passkey over](#carrying-a-passkey-over) |
+| `one_tab` | Boolean | `false` | Keep the step in one tab: a link that would open a window, by its `target`, and `window.open`, open their page in the tab instead, so that the actions after go on with it. It puts a script in the pages. See [Keeping to one tab](#keeping-to-one-tab) |
 | `session` | Boolean | `false` | Keep the browser open for the next steps of the job that set it too, which drive the page as this one left it. Probe stops it once the run is over. See [Keeping the browser open](#keeping-the-browser-open) |
 | `virtual_authenticator` | Boolean or map | none | Answer WebAuthn with a virtual authenticator, so that a passkey can be registered and used without a user. See [Signing in with a passkey](#signing-in-with-a-passkey) |
 
@@ -174,7 +175,7 @@ These act on the page the way a user would. They return nothing.
 | `scroll` | Scrolls `selector` into view |
 | `form_input` | Sets the form field `selector` to `value`, once it is visible, as a user's input does, firing `input` and `change`, and puts what it did in `res.results`: chooses the option of a `<select>` whose value or label is `value`, checks or unchecks a checkbox or a radio by `true` or `false`, sets the value of an `input` or a `textarea`, and types into a contenteditable element, as `type` does, through the editor, firing `change` after. A field that is disabled, a disabled `<fieldset>` around it included, an option that is not there, and an element that is no field, fail the step with the reason |
 | `select` | Chooses the option of the `<select>` at `selector` whose value is `value`, or else whose label is, once it is visible, and fires `input` and `change` as a user's choice does. An option that is not there or is disabled, a `<select>` that is disabled, and an element that is not a `<select>`, fail the step with the reason, a `disabled` on an `<optgroup>` or a `<fieldset>` around them included; the values of the options are in the message. Of a `<select multiple>`, the option is added to those chosen |
-| `hover` | Sends a `mouseover` event to `selector`. It does not wait, and does nothing when nothing matches. At the point `x`, `y`, it moves the mouse there |
+| `hover` | Sends a `mouseover` event to `selector`. It does not wait, and does nothing when nothing matches. At the point `x`, `y`, and on the element of a `ref`, once it is visible, it moves the mouse there, as a user's does, so that `mouseenter` and `:hover` follow |
 | `right_click` | Sends a `contextmenu` event to `selector`. It does not wait, and does nothing when nothing matches. At the point `x`, `y`, it clicks there with the right button of the mouse |
 
 #### Using the mouse at a point
@@ -429,6 +430,27 @@ A ref is `ref_`, four letters drawn for the document, and a number counted from 
 `page_text` reads the text the page shows, as `text` reads that of an element, with the main content, `main` or `role=main`, first.
 
 The package `github.com/mozership/probe-browser/outline` reads a page so for another Go tool that drives Chrome with chromedp.
+
+### Keeping to one tab
+
+The actions drive the tab the step opened, so a page a link opens in a new window, by `target="_blank"`, or a script with `window.open`, is out of their reach. `one_tab: true` has those open their page in the tab instead: a script in every page the tab opens turns the `target` of a link that is clicked into `_self`, and `window.open` into a move of the tab. A step that follows such a link, as to a help page, goes on with the page it opens.
+
+```yaml
+  - name: The help link opens the guide
+    uses: browser
+    with:
+      one_tab: true
+      actions:
+        - name: navigate
+          url: "{{vars.url}}/"
+        - name: click
+          has_text: Help
+        - name: wait_text
+          selector: h1
+          equals: Guide
+```
+
+The script changes how the page behaves, which is why it is asked for: a page that tells a window it opened from itself, as by `window.opener`, finds itself.
 
 ### Finding an element again
 
