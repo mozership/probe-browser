@@ -5,9 +5,13 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 	"testing"
+	"time"
 
 	"github.com/hashicorp/go-hclog"
 	"github.com/mozership/probe/actionrpc"
@@ -158,5 +162,90 @@ func TestRunStep_KeepsTheBrowser(t *testing.T) {
 	if _, _, err := call(state, map[string]any{"name": "value", "id": "q", "selector": "#q"}); err == nil ||
 		!strings.Contains(err.Error(), "is gone") {
 		t.Errorf("a step after the cleanup: %v, want the browser gone", err)
+	}
+}
+
+// TestRunStep_AFailedFirstStepLeavesNoBrowser fails the step that starts the
+// browser: Probe keeps no state it returns, so the browser is stopped then.
+func TestRunStep_AFailedFirstStepLeavesNoBrowser(t *testing.T) {
+	if testing.Short() {
+		t.Skip("starts Chrome")
+	}
+	cache := t.TempDir()
+	t.Setenv(CacheDirEnv, cache)
+	a := &Action{log: hclog.NewNullLogger()}
+	run := "run-failed-" + strconv.Itoa(os.Getpid())
+	procs := &actionrpc.Processes{}
+	_, state, err := a.RunStep(actionrpc.Call{
+		With: map[string]any{
+			"session": true, "headless": true, "timeout": "3s", "evidence_dir": t.TempDir(),
+			"actions": []any{map[string]any{"name": "wait_visible", "selector": "#nothing"}},
+		},
+		Step:      actionrpc.Step{RunID: run},
+		Cleanups:  &actionrpc.Cleanups{},
+		Processes: procs,
+	})
+	if err == nil {
+		t.Fatal("the step did not fail")
+	}
+	if strings.Contains(err.Error(), "executable file not found") {
+		t.Skipf("no Chrome to start: %v", err)
+	}
+	if state != nil {
+		t.Errorf("state = %v, want none", state)
+	}
+	for _, p := range procs.List() {
+		deadline := time.Now().Add(stopWait)
+		for groupAlive(p.PID) && time.Now().Before(deadline) {
+			time.Sleep(100 * time.Millisecond)
+		}
+		if groupAlive(p.PID) {
+			t.Errorf("the browser %d is still running", p.PID)
+		}
+	}
+	dir, _ := sessionsDir(run)
+	if left, _ := filepath.Glob(filepath.Join(dir, "browser-*")); len(left) != 0 {
+		t.Errorf("profiles left: %v", left)
+	}
+}
+
+// startGroup starts sh running script as the leader of a process group of
+// its own, as a kept browser runs, and returns its PID once it has exited
+// when exit is set.
+func startGroup(t *testing.T, script string, exit bool) int {
+	t.Helper()
+	cmd := exec.Command("sh", "-c", script)
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	pid := cmd.Process.Pid
+	t.Cleanup(func() { _ = syscall.Kill(-pid, syscall.SIGKILL); _ = cmd.Wait() })
+	if exit {
+		if err := cmd.Wait(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return pid
+}
+
+func TestStopGroup_LeavesAProcessThatTookTheNumber(t *testing.T) {
+	pid := startGroup(t, "sleep 30", false)
+	stopGroup(pid, filepath.Join(t.TempDir(), "browser-x"))
+	if !alive(pid) {
+		t.Error("a process that does not run the browser's profile was stopped")
+	}
+}
+
+func TestStopGroup_StopsWhatTheBrowserLeft(t *testing.T) {
+	// The leader exits and leaves a child in its group, as a browser that
+	// crashed can leave its helpers.
+	pid := startGroup(t, "sleep 30 & exit 0", true)
+	if !groupAlive(pid) {
+		t.Fatal("the group has no process left to stop")
+	}
+	stopGroup(pid, filepath.Join(t.TempDir(), "browser-x"))
+	if groupAlive(pid) {
+		t.Error("the processes the leader left are still running")
 	}
 }

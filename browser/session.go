@@ -8,8 +8,10 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -124,18 +126,29 @@ func (req *Req) startSession(base context.Context) (context.Context, context.Can
 		cancel()
 		allocCancel()
 	}
-	if err := req.browserRunner.Start(ctx); err != nil {
+	// KeepOpen leaves the browser running when the contexts are
+	// cancelled, so one that started but cannot be used is stopped here,
+	// before its profile, by which Cleanup would find it, is removed.
+	discard := func() {
+		if c := chromedp.FromContext(ctx); c != nil && c.Browser != nil {
+			if p := c.Browser.Process(); p != nil {
+				stopGroup(p.Pid, profile)
+			}
+		}
 		cancelFunc()
 		_ = os.RemoveAll(profile)
+	}
+	if err := req.browserRunner.Start(ctx); err != nil {
+		discard()
 		return nil, nil, err
 	}
 	c := chromedp.FromContext(ctx)
 	if p := c.Browser.Process(); p != nil {
-		req.session.processes.Add(actionrpc.Process{PID: p.Pid})
 		if err := os.WriteFile(filepath.Join(profile, pidFile), []byte(strconv.Itoa(p.Pid)), 0o600); err != nil {
-			cancelFunc()
+			discard()
 			return nil, nil, err
 		}
+		req.session.processes.Add(actionrpc.Process{PID: p.Pid})
 	}
 	wsURL, _ := chromedp.KeptOpen(ctx)
 	req.session.started = &session{WSURL: wsURL, TargetID: string(c.Target.TargetID), Dir: profile}
@@ -181,38 +194,69 @@ func cleanupSessions(runID string) error {
 			continue
 		}
 		if pid, err := strconv.Atoi(string(b)); err == nil {
-			stopGroup(pid)
+			stopGroup(pid, p)
 		}
 	}
 	return os.RemoveAll(dir)
 }
 
-// stopGroup stops the process group pid leads: SIGTERM first, then SIGKILL
-// for one that has not exited.
-func stopGroup(pid int) {
-	if pid <= 0 || !alive(pid) {
+// discardSession stops the browser a step started and removes its profile,
+// for a step that failed: Probe keeps no state a failed step returns, so no
+// later step could reach the browser.
+func discardSession(s *session) {
+	b, err := os.ReadFile(filepath.Join(s.Dir, pidFile))
+	if err == nil {
+		if pid, err := strconv.Atoi(string(b)); err == nil {
+			stopGroup(pid, s.Dir)
+		}
+	}
+	_ = os.RemoveAll(s.Dir)
+}
+
+// stopGroup stops the process group of the browser whose profile is
+// profile, which its process pid leads: SIGTERM first, then SIGKILL for one
+// that has not exited. The group is the browser's while pid runs the
+// browser with that profile, or, once pid has exited, while the group has
+// processes left, as a process group's ID is not reused while it has any;
+// a pid that runs anything else is another process that took the number.
+func stopGroup(pid int, profile string) {
+	if pid <= 0 || !groupAlive(pid) {
+		return
+	}
+	if alive(pid) && !runsProfile(pid, profile) {
 		return
 	}
 	_ = syscall.Kill(-pid, syscall.SIGTERM)
-	if waitGone(pid, stopWait) {
+	if waitGroupGone(pid, stopWait) {
 		return
 	}
 	_ = syscall.Kill(-pid, syscall.SIGKILL)
-	waitGone(pid, stopWait)
+	waitGroupGone(pid, stopWait)
 }
 
 func alive(pid int) bool {
 	return syscall.Kill(pid, 0) == nil
 }
 
-// waitGone reports whether the process exits within d.
-func waitGone(pid int, d time.Duration) bool {
+func groupAlive(pgid int) bool {
+	return syscall.Kill(-pgid, 0) == nil
+}
+
+// runsProfile reports whether the process pid runs a browser with the
+// profile, as its command line names it.
+func runsProfile(pid int, profile string) bool {
+	out, err := exec.Command("ps", "-o", "command=", "-p", strconv.Itoa(pid)).Output()
+	return err == nil && strings.Contains(string(out), "--user-data-dir="+profile)
+}
+
+// waitGroupGone reports whether every process of the group exits within d.
+func waitGroupGone(pgid int, d time.Duration) bool {
 	deadline := time.Now().Add(d)
 	for time.Now().Before(deadline) {
-		if !alive(pid) {
+		if !groupAlive(pgid) {
 			return true
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
-	return !alive(pid)
+	return !groupAlive(pgid)
 }

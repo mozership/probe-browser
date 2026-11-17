@@ -413,7 +413,7 @@ jobs:
     test: res.results.q == "probe"
 ```
 
-Each job keeps a browser of its own, so jobs that run at the same time do not share a page, and each run of a repeated job starts one anew. A step after the first only attaches to the browser, so it takes a fraction of a second where starting Chrome takes one or more. Probe stops the browsers of a run once it is over, the action's `cleanup` removing their profiles from the cache directory, `probe-browser/sessions` in the user's cache directory, or `$PROBE_BROWSER_CACHE_DIR/sessions` when that is set. A browser that is gone by the next step, as when it crashed, fails that step, which names it.
+Each job keeps a browser of its own, so jobs that run at the same time do not share a page, and each run of a repeated job starts one anew. A step after the first only attaches to the browser, so it takes a fraction of a second where starting Chrome takes one or more. Probe stops the browsers of a run once it is over, the action's `cleanup` removing their profiles from the cache directory, `probe-browser/sessions` in the user's cache directory, or `$PROBE_BROWSER_CACHE_DIR/sessions` when that is set. A browser that is gone by the next step, as when it crashed, fails that step, which names it. A step that starts the browser and fails stops it at once, as Probe keeps no state a failed step returns, so the next step with `session` starts another.
 
 `session` needs Probe v1.30.0 or later, which tells the action about the job's state and stops what it leaves running; under an earlier one, the step is refused. It does not take `passkeys` or `virtual_authenticator` yet.
 
