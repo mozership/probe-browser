@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/chromedp/cdproto/page"
 	"github.com/chromedp/cdproto/webauthn"
 	"github.com/chromedp/chromedp"
 	"github.com/mozership/probe-browser/outline"
@@ -237,6 +238,9 @@ type Req struct {
 	OneTab  bool `map:"one_tab"`
 	Timeout time.Duration
 	cb      *Callback
+	// oneTabScript is the registration of one_tab's script, removed once
+	// the actions have run.
+	oneTabScript page.ScriptIdentifier
 	// session is what the runner gave a step that keeps its browser; nil
 	// for a step called without one, as Request is.
 	session       *sessionCall
@@ -506,7 +510,7 @@ func (req *Req) buildActionTasks() ([]chromedp.Action[chromedp.Void], error) {
 	// A step that attaches to the browser of the job finds it as the step
 	// before left it, which loading a state would take back to about:blank.
 	if req.OneTab {
-		tasks = append(tasks, oneTab())
+		tasks = append(tasks, oneTab(&req.oneTabScript))
 	}
 
 	if req.StorageState != "" && !req.attaches() {
@@ -890,7 +894,13 @@ func (req *Req) do() (*Result, error) {
 	ctx, actionsCancel := context.WithDeadline(browserCtx, deadline)
 	defer actionsCancel()
 
-	if err := req.browserRunner.Run(ctx, tasks...); err != nil {
+	err = req.browserRunner.Run(ctx, tasks...)
+	// one_tab is of the step: in a kept browser, a step after it without
+	// one_tab has the page's own windows.
+	if req.Session && (req.OneTab || req.attaches()) {
+		_ = req.browserRunner.Run(browserCtx, oneTabDone(req.oneTabScript))
+	}
+	if err != nil {
 		errs := console.stop(browserCtx, req.browserRunner.Run)
 		netErrs, _ := net.stop()
 		return nil, req.withEvidence(browserCtx, withNetworkErrors(withConsoleErrors(err, errs), netErrs))

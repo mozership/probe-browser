@@ -49,6 +49,51 @@ jobs:
         id: url
     test: res.code == 0 && res.results.url == vars.url + "/input.html"
 
+- name: A link of the base's target
+  steps:
+  - name: A link whose window is the base's opens in the tab
+    uses: browser
+    with:
+      headless: true
+      one_tab: true
+      timeout: 30s
+      actions:
+      - name: navigate
+        url: "{{vars.url}}/onetab-base.html"
+      - name: click
+        selector: "#by-base"
+      - name: wait_text
+        selector: h1
+        equals: Input
+    test: res.code == 0
+
+- name: one_tab is of its step
+  steps:
+  - name: A step keeps to one tab
+    uses: browser
+    with:
+      headless: true
+      session: true
+      one_tab: true
+      timeout: 30s
+      actions:
+      - name: navigate
+        url: "{{vars.url}}/onetab.html"
+    test: res.code == 0
+
+  - name: The next step without one_tab has the page's own windows
+    uses: browser
+    with:
+      session: true
+      timeout: 30s
+      actions:
+      - name: click
+        selector: "#open"
+      - name: wait_ready
+      - name: url
+        id: url
+    test: res.code == 0 && res.results.url == vars.url + "/onetab.html"
+
 - name: Hover a ref
   steps:
   - name: Read the button
