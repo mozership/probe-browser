@@ -534,8 +534,10 @@
         if (want || el.type === 'checkbox') {
           el.click();
         } else {
-          // A click leaves a radio checked, so it is unchecked as such.
-          el.checked = false;
+          // A click leaves a radio checked, so it is unchecked as such,
+          // through the setter of the prototype, as React tracks what the
+          // instance's own property was last given.
+          Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'checked').set.call(el, false);
           fire();
         }
       }
