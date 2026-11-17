@@ -7,9 +7,9 @@ params: [actions, headless, window_w, window_h, viewport_w, viewport_h, evidence
 cleanup: true
 runs:
   using: binary
-  url: https://github.com/mozership/probe-browser/releases/download/v0.10.0/probe-browser_{os}_{arch}
+  url: https://github.com/mozership/probe-browser/releases/download/v0.10.1/probe-browser_{os}_{arch}
   checksums:
-    darwin_amd64: "ffbe27de3b1e28072edc8bfa13f616158b8b6d930f724b0bd82e8e115b36267c"
-    darwin_arm64: "e3f523490db8950640f24a3ff0c35c504674ff73bac5c246c16fd319beec23e8"
-    linux_amd64: "7ee10087b593cbb2745fb75a1b62429aac207cba5605892247041bf302524414"
-    linux_arm64: "e1410e39bd6cf0c52d3cfa62b27cbdb94c37707da450e105ac02d3e3f8f6cca7"
+    darwin_amd64: "5f6737afdcf06bb1b63ccb64692c54ee6e9e15da80e329fea5baaccf2bd396e3"
+    darwin_arm64: "b1b83dc369ff7b1f119f37ab12ff4198ede6d52b1a7b06c587181b6b4182be75"
+    linux_amd64: "8f52aea1b0ba6bed65a7b51fc6bc1414459e3e3e508fc4650aa4507b4f6ed7b4"
+    linux_arm64: "4a0435a2e347eeddb92cd2271c32feda0db9a2c103ea24309383bedba8fff9cf"
