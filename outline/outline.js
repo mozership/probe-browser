@@ -522,7 +522,9 @@
       if (!opt) throw new Error('no option ' + quote(want) + ' in ' + ref + '; the options are ' + quote(opts.map((o) => o.label)));
       // :disabled is also that of an option of a disabled optgroup.
       if (opt.matches(':disabled')) throw new Error('the option ' + quote(opt.label) + ' is disabled');
-      if (el.multiple) opt.selected = true; else el.value = opt.value;
+      // The option itself is chosen, as another of its value can come
+      // first.
+      opt.selected = true;
       fire();
       return 'Selected ' + quote(opt.label) + ' in ' + ref + '.';
     }
@@ -636,6 +638,9 @@
     if (!role) return null;
     const name = clip(nameOf(el, role), 200);
     const twins = withRoleAndName(role, name);
+    // An element hidden from the page is none of them, and describing it
+    // would name another, which a replay would act on.
+    if (!twins.includes(el)) return null;
     if (twins.length <= 1) return { role, name };
     if (!name) return null;
     return { role, name, nth: Math.max(twins.indexOf(el), 0), of: twins.length };

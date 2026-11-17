@@ -151,8 +151,10 @@ func (a *ChromeDPAction) checkLocate() error {
 		return fmt.Errorf("locate needs locator, with the role and the name of the element, as locator gives them")
 	case a.Name != "locate" && a.givesAny("locator"):
 		return fmt.Errorf("%s does not take locator: only locate does", a.Name)
-	case a.Name == "locate" && a.Locator.Of > 1 && (a.Locator.Nth < 0 || a.Locator.Nth >= a.Locator.Of):
-		return fmt.Errorf("locate: nth is %d, but it is 0 to %d, of the %d elements", a.Locator.Nth, a.Locator.Of-1, a.Locator.Of)
+	case a.Name == "locate" && a.Locator.Of < 0:
+		return fmt.Errorf("locate: of is %d, but it is how many elements have the role and the name, 1 or more", a.Locator.Of)
+	case a.Name == "locate" && (a.Locator.Nth < 0 || a.Locator.Nth >= max(a.Locator.Of, 1)):
+		return fmt.Errorf("locate: nth is %d, but it is 0 to %d, of the %d elements", a.Locator.Nth, max(a.Locator.Of, 1)-1, max(a.Locator.Of, 1))
 	}
 	return nil
 }

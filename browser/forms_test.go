@@ -17,6 +17,8 @@ func TestBuildActionTasks_FormsRefused(t *testing.T) {
 		{map[string]any{"name": "locate"}, "locate needs locator"},
 		{map[string]any{"name": "locate", "locator": map[string]any{"name": "Save"}}, "locate needs locator"},
 		{map[string]any{"name": "locate", "locator": map[string]any{"role": "button", "name": "Save", "nth": 2, "of": 2}}, "locate: nth is 2, but it is 0 to 1"},
+		{map[string]any{"name": "locate", "locator": map[string]any{"role": "button", "name": "Save", "nth": 1}}, "locate: nth is 1, but it is 0 to 0"},
+		{map[string]any{"name": "locate", "locator": map[string]any{"role": "button", "name": "Save", "of": -1}}, "locate: of is -1"},
 		{map[string]any{"name": "click", "selector": "b", "locator": map[string]any{"role": "button"}}, "click does not take locator"},
 		{map[string]any{"name": "form_input", "value": "x"}, "form_input needs selector, has_text or ref"},
 		{map[string]any{"name": "locator"}, "locator needs selector, has_text or ref, to find the element it acts on, or x and y"},
@@ -62,9 +64,10 @@ const reviewFormsPage = `<!doctype html><title>t</title><body style="margin:0">
 <input id="date" type="date">
 <label><input type="radio" name="p" id="r1" checked> A</label>
 <select id="s"><optgroup label="G" disabled><option value="x">X</option></optgroup><option value="y">Y</option></select>
+<select id="dup"><option value="v" disabled>Old</option><option value="v">New</option></select>
 <div id="ed" contenteditable="true">t</div><p id="edchanged">no</p>
 <x-field></x-field><p id="composed">no</p>
-<div style="opacity:0"><button>Twin</button></div><button>Twin</button>
+<div style="opacity:0"><button id="hidden-twin">Twin</button></div><button id="twin">Twin</button>
 <div style="opacity:0"><div role="alert">Hidden alert</div></div><div role="alert">Shown alert</div>
 <x-btn style="position:absolute;left:0;top:400px"></x-btn>
 <script>
@@ -98,7 +101,10 @@ func TestForms_WhatIsEasyToGetWrong(t *testing.T) {
 		map[string]any{"name": "text", "id": "edchanged", "selector": "#edchanged"},
 		map[string]any{"name": "form_input", "selector": "#inner", "value": "typed"},
 		map[string]any{"name": "text", "id": "composed", "selector": "#composed"},
-		map[string]any{"name": "locator", "id": "twin", "selector": "button", "has_text": "Twin"},
+		map[string]any{"name": "locator", "id": "twin", "selector": "#twin"},
+		map[string]any{"name": "locator", "id": "hidden", "selector": "#hidden-twin"},
+		map[string]any{"name": "form_input", "selector": "#dup", "value": "New"},
+		map[string]any{"name": "read_page", "id": "dup", "filter": "all"},
 		map[string]any{"name": "locator", "id": "shadow", "x": 10, "y": 410},
 		map[string]any{"name": "alerts", "id": "alerts"},
 	)
@@ -108,6 +114,11 @@ func TestForms_WhatIsEasyToGetWrong(t *testing.T) {
 		}
 		t.Fatal(err)
 	}
+	// The option chosen by its label is the one of that label, not the
+	// first of its value, which is disabled.
+	if !strings.Contains(res["dup"], `value="New" options="Old | New"`) {
+		t.Errorf("the page reads\n%s\nwant New chosen", res["dup"])
+	}
 	for k, want := range map[string]string{
 		// A radio is unchecked when asked to be.
 		"radio": `Unchecked "#r1".`,
@@ -115,8 +126,10 @@ func TestForms_WhatIsEasyToGetWrong(t *testing.T) {
 		// root an input the page outside it hears.
 		"edchanged": "yes",
 		"composed":  "yes",
-		// A twin hidden by what holds it is not counted.
-		"twin": `{"role":"button","name":"Twin"}`,
+		// A twin hidden by what holds it is not counted, and not described,
+		// as its locator would name the other.
+		"twin":   `{"role":"button","name":"Twin"}`,
+		"hidden": "",
 		// A point over a button of a shadow root is that button.
 		"shadow": `{"role":"button","name":"Shadow button"}`,
 		// An alert hidden by what holds it is not read.
