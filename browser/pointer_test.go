@@ -49,6 +49,7 @@ func TestBuildActionTasks_PointerTaken(t *testing.T) {
 		{"name": "type", "value": "typed into the focus"},
 		{"name": "press", "value": "Control+a Backspace", "repeat": 3},
 		{"name": "press", "value": " "},
+		{"name": "press", "value": "Control+ "},
 	} {
 		req := NewReq()
 		if err := req.parseData(map[string]any{"actions": []any{action}}, nil); err != nil {

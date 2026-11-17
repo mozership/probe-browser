@@ -9,6 +9,8 @@
     #below { position: absolute; left: 0; top: 220px; }
     #scroller { height: 150px; width: 300px; overflow: auto; }
     #scroller div { height: 2000px; }
+    html { scroll-behavior: smooth; }
+    #far { margin-top: 3000px; }
   </style>
 </head>
 <body>
@@ -21,6 +23,10 @@
     <div id="scroller"><div>tall</div></div>
     <p id="scrolled">scrolled: 0</p>
     <input id="field">
+    <!-- A button below the fold of a page that scrolls smoothly, which a
+         click with the mouse scrolls into view before it points at it. -->
+    <button id="far" type="button">Far</button>
+    <p id="far-clicked">none</p>
   </div>
   <script>
     const pad = document.getElementById("pad");
@@ -34,6 +40,9 @@
     }
     pad.addEventListener("mousemove", (e) => {
       document.getElementById("hovered").textContent = `hovered at ${e.clientX},${e.clientY}`;
+    });
+    document.getElementById("far").addEventListener("click", (e) => {
+      document.getElementById("far-clicked").textContent = "far clicked, shift=" + e.shiftKey;
     });
     const scroller = document.getElementById("scroller");
     scroller.addEventListener("scroll", () => {

@@ -138,7 +138,8 @@ func parseKey(s string) (rune, []chromedp.Modifier, error) {
 // pressKeys returns an action that presses the keys of value, apart by
 // spaces, as Control+a Backspace, repeat times, 1 when repeat is 0: on the
 // target, once it is visible and focused, or on the element that has the
-// focus without one. A value of spaces alone is the key it is.
+// focus without one. A value that is one key as it is, as a space with a
+// modifier, is that key.
 func pressKeys(tg target, value string, repeat int) (chromedp.Action[chromedp.Void], error) {
 	if repeat < 0 {
 		return nil, fmt.Errorf("press: repeat is %d, but it is how many times to press, 1 or more", repeat)
@@ -146,9 +147,11 @@ func pressKeys(tg target, value string, repeat int) (chromedp.Action[chromedp.Vo
 	if repeat == 0 {
 		repeat = 1
 	}
-	keys := strings.Fields(value)
-	if len(keys) == 0 {
-		keys = []string{value}
+	// A value that is one key as it is, as " " or Control+ , a space with
+	// a modifier, is that key; any other is keys apart by spaces.
+	keys := []string{value}
+	if _, _, err := parseKey(value); err != nil && strings.TrimSpace(value) != "" {
+		keys = strings.Fields(value)
 	}
 	var presses []chromedp.Action[chromedp.Void]
 	for _, key := range keys {

@@ -65,7 +65,9 @@ const pointScript = `((el) => {
 	if (!el) {
 		return { error: "no element matched" };
 	}
-	el.scrollIntoView({ block: "center", inline: "center" });
+	// The scroll is instant, whatever scroll-behavior the page sets, so
+	// that the box is measured where the element has come to.
+	el.scrollIntoView({ block: "center", inline: "center", behavior: "instant" });
 	const r = el.getBoundingClientRect();
 	if (r.width === 0 && r.height === 0) {
 		return { error: "the element has no box to point at" };

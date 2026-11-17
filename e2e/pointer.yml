@@ -70,6 +70,22 @@ jobs:
         equals: "scrolled: 200"
     test: res.code == 0
 
+  - name: A click with the mouse reaches an element below the fold of a page that scrolls smoothly
+    uses: browser
+    with:
+      headless: true
+      timeout: 30s
+      actions:
+      - name: navigate
+        url: "{{vars.url}}/pointer.html"
+      - name: click
+        selector: "#far"
+        modifiers: [Shift]
+      - name: text
+        id: far
+        selector: "#far-clicked"
+    test: res.code == 0 && res.results.far == "far clicked, shift=true"
+
   - name: Keys go to the element that has the focus
     uses: browser
     with:
