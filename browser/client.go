@@ -329,6 +329,11 @@ func (req *Req) buildChromeDPOptions() []chromedp.ExecAllocatorOption {
 		chromedp.WindowSize(req.WindowW, req.WindowH),
 		chromedp.Flag("headless", req.Headless),
 		chromedp.WSURLReadTimeout(req.Timeout),
+		// The back-forward cache is off, so that back and forward load the
+		// page anew: chromedp does not follow a page the cache restores, and
+		// an action that looks for an element of it would wait out its
+		// timeout. The features chromedp turns off are kept off.
+		chromedp.Flag("disable-features", "Translate,BlinkGenPropertyTrees,BackForwardCache"),
 	)
 	return opts
 }
@@ -500,6 +505,20 @@ func (req *Req) buildActionTasks() ([]chromedp.Action[chromedp.Void], error) {
 			var text string
 			tasks = append(tasks, readText(tg, false, &text))
 			action.reText = &text
+		case "back":
+			tasks = append(tasks, history(-1))
+		case "forward":
+			tasks = append(tasks, history(1))
+		case "reload":
+			tasks = append(tasks, chromedp.Reload())
+		case "url":
+			var text string
+			tasks = append(tasks, store(chromedp.Location(), &text))
+			action.reText = &text
+		case "title":
+			var text string
+			tasks = append(tasks, store(chromedp.Title(), &text))
+			action.reText = &text
 		case "read_page":
 			if err := outline.CheckFilter(action.Filter); err != nil {
 				return nil, fmt.Errorf("read_page: %w", err)
@@ -666,7 +685,7 @@ func (req *Req) collectResults() (map[string]string, map[string]string, error) {
 
 	for _, action := range req.Actions {
 		switch action.Name {
-		case "text", "value", "get_attribute", "wait_text", "get_html", "wait_passkey", "get_cookie", "read_page", "page_text":
+		case "text", "value", "get_attribute", "wait_text", "get_html", "wait_passkey", "get_cookie", "read_page", "page_text", "url", "title":
 			key := action.Name
 			if action.ID != "" {
 				key = action.ID
