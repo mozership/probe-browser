@@ -195,7 +195,7 @@ These save an image file and put its path in `res.filepaths`, under `id` or the 
 
 | Action | Image |
 |--------|-------|
-| `capture_screenshot` | The visible part of the window, as PNG, or as JPEG when `quality` is `1` to `99`. With `x`, `y`, `width` and `height`, only that region of the viewport, in CSS pixels from its top left corner, enlarged `scale` times, 1 to 4, 1 when unset, as to read small text in it |
+| `capture_screenshot` | The visible part of the window, as PNG, or as JPEG when `quality` is `1` to `99`. With `x`, `y`, `width` and `height`, only that region of the viewport, in CSS pixels from its top left corner, enlarged `scale` times, 1 to 4, 1 when unset, as to read small text in it. A region that goes out of the viewport fails the step |
 | `full_screenshot` | The whole page, as PNG, or as JPEG when `quality` is `1` to `99` |
 | `screenshot` | Only `selector`, once it is visible, as PNG |
 

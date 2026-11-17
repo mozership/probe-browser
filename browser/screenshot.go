@@ -60,17 +60,21 @@ func viewportScreenshot(quality int, r *region, dst *[]byte) chromedp.Action[chr
 		q64 := int64(q)
 		params.Format, params.Quality = page.CaptureScreenshotFormatJpeg, &q64
 	}
-	scroll := chromedp.Evaluate[[2]float64]("[scrollX, scrollY]")
+	view := chromedp.Evaluate[[4]float64]("[scrollX, scrollY, innerWidth, innerHeight]")
 	return func(ctx context.Context, t *chromedp.Target) (chromedp.Void, error) {
 		p := params
 		if r != nil {
-			// The clip is of the document, so the scroll is added to the
-			// point of the viewport.
-			s, err := scroll(ctx, t)
+			v, err := view(ctx, t)
 			if err != nil {
 				return chromedp.Void{}, err
 			}
-			p.Clip = &page.Viewport{X: r.x + s[0], Y: r.y + s[1], Width: r.width, Height: r.height, Scale: r.scale}
+			// The size of the viewport is known only now, in the browser.
+			if r.x+r.width > v[2] || r.y+r.height > v[3] {
+				return chromedp.Void{}, fmt.Errorf("capture_screenshot: the region %g, %g, %g by %g goes out of the viewport, which is %g by %g", r.x, r.y, r.width, r.height, v[2], v[3])
+			}
+			// The clip is of the document, so the scroll is added to the
+			// point of the viewport.
+			p.Clip = &page.Viewport{X: r.x + v[0], Y: r.y + v[1], Width: r.width, Height: r.height, Scale: r.scale}
 		}
 		res, err := cdp.Call(ctx, t, page.CaptureScreenshot, p)
 		if err != nil {

@@ -5,6 +5,7 @@ import (
 	"image"
 	_ "image/jpeg"
 	_ "image/png"
+	"maps"
 	"os"
 	"path/filepath"
 	"strings"
@@ -149,11 +150,12 @@ func TestCaptureScreenshot_ARegionOfAScrolledPage(t *testing.T) {
 	// Red to 1000 pixels down, blue to 2000, green below: scrolled 1500
 	// down, the viewport shows blue at its top, which a region of the top
 	// of the page, or of 1500 below the viewport, would not.
-	page := "data:text/html,<body style='margin:0'><div style='height:1000px;background:rgb(255,0,0)'></div><div style='height:1000px;background:rgb(0,0,255)'></div><div style='height:3000px;background:rgb(0,255,0)'></div>"
+	page := "data:text/html,<body style='margin:0'><div style='height:1000px;background:rgb(255,0,0)'></div><div style='height:1000px;background:rgb(0,0,255)'></div><div style='height:3000px;background:rgb(0,255,0)'></div><div id='mark' style='position:absolute;top:1500px;height:1px;width:1px'></div>"
 	ret, err := Request(map[string]any{"headless": true, "timeout": "30s", "window_w": 800, "window_h": 600, "evidence_dir": t.TempDir(), "actions": []any{
 		map[string]any{"name": "navigate", "url": page},
-		map[string]any{"name": "wheel", "x": 100, "y": 100, "direction": "down", "amount": 15},
-		map[string]any{"name": "wait_ready"},
+		// The wheel scrolls in steps a while on some machines, so the page is
+		// scrolled at once, the mark at the top of the viewport.
+		map[string]any{"name": "scroll", "selector": "#mark"},
 		map[string]any{"name": "capture_screenshot", "id": "region", "x": 0, "y": 0, "width": 20, "height": 20},
 	}})
 	if err != nil {
@@ -175,5 +177,29 @@ func TestCaptureScreenshot_ARegionOfAScrolledPage(t *testing.T) {
 	}
 	if r, g, b, _ := img.At(10, 10).RGBA(); b <= r || b <= g {
 		t.Errorf("the region is not blue, of what the viewport shows, but %d, %d, %d", r>>8, g>>8, b>>8)
+	}
+}
+
+func TestCaptureScreenshot_ARegionOutOfTheViewport(t *testing.T) {
+	if testing.Short() {
+		t.Skip("starts Chrome")
+	}
+	for _, r := range []map[string]any{
+		{"x": 790, "y": 0, "width": 100, "height": 10},
+		{"x": 900, "y": 0, "width": 10, "height": 10},
+		{"x": 0, "y": 590, "width": 10, "height": 100},
+	} {
+		action := map[string]any{"name": "capture_screenshot"}
+		maps.Copy(action, r)
+		_, err := Request(map[string]any{"headless": true, "timeout": "30s", "window_w": 800, "window_h": 600, "evidence_dir": t.TempDir(), "actions": []any{
+			map[string]any{"name": "navigate", "url": "data:text/html,<p>A page</p>"},
+			action,
+		}})
+		if err != nil && strings.Contains(err.Error(), "executable file not found") {
+			t.Skipf("no Chrome to start: %v", err)
+		}
+		if err == nil || !strings.Contains(err.Error(), "goes out of the viewport") {
+			t.Errorf("%v: %v, want the region refused", r, err)
+		}
 	}
 }
