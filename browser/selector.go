@@ -2,6 +2,7 @@ package browser
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -361,7 +362,7 @@ func (tg target) String() string {
 
 // all is a script expression for the elements the target matches. That of
 // a ref is the element of the ref, or none for a ref that names none, which
-// checkRef has refused with its reason before.
+// guardRef refuses with its reason.
 func (tg target) all() string {
 	if tg.ref != "" {
 		return fmt.Sprintf("(() => { try { return [%s]; } catch (e) { return []; } })()", outline.Element(tg.ref))
@@ -369,9 +370,16 @@ func (tg target) all() string {
 	return fmt.Sprintf("%s.all(%s, %s)", findScript, jsString(tg.css), jsString(tg.text))
 }
 
-// checkRef returns an action that fails at once for a ref that names no
-// element of the page, as one of a page the tab has left, rather than
-// waiting for it until the timeout.
+// staleRef is the error of a ref that names no element of the page.
+type staleRef struct {
+	ref    string
+	reason string
+}
+
+func (e *staleRef) Error() string { return "ref " + e.ref + ": " + e.reason }
+
+// checkRef returns an action that fails with a staleRef for a ref that
+// names no element of the page, as one of a page the tab has left.
 func checkRef(ref string) chromedp.Action[chromedp.Void] {
 	// The script gives the reason as a string, which reads better than the
 	// exception it is thrown in.
@@ -382,9 +390,58 @@ func checkRef(ref string) chromedp.Action[chromedp.Void] {
 			return chromedp.Void{}, fmt.Errorf("ref %s: %w", ref, err)
 		}
 		if reason != "" {
-			return chromedp.Void{}, fmt.Errorf("ref %s: %s", ref, reason)
+			return chromedp.Void{}, &staleRef{ref: ref, reason: reason}
 		}
 		return chromedp.Void{}, nil
+	}
+}
+
+// refCheckInterval is how often guardRef looks again at the ref of an
+// action that is waiting for its element.
+const refCheckInterval = 250 * time.Millisecond
+
+// guardRef returns a, run on the element of ref, failing at once, with the
+// reason, when the ref names no element of the page: before a runs, rather
+// than once the timeout runs out, and while a waits for the element, as
+// when the page renders it anew, since an element of a ref that is gone
+// does not come back. When a succeeds, it succeeds, though the element be
+// gone since, as a button a click takes out of the page.
+func guardRef(ref string, a chromedp.Action[chromedp.Void]) chromedp.Action[chromedp.Void] {
+	check := checkRef(ref)
+	return func(ctx context.Context, t *chromedp.Target) (chromedp.Void, error) {
+		if _, err := check(ctx, t); err != nil {
+			return chromedp.Void{}, err
+		}
+		actx, cancel := context.WithCancel(ctx)
+		defer cancel()
+		stale := make(chan error, 1)
+		go func() {
+			tick := time.NewTicker(refCheckInterval)
+			defer tick.Stop()
+			for {
+				select {
+				case <-actx.Done():
+					return
+				case <-tick.C:
+				}
+				var e *staleRef
+				if _, err := check(actx, t); errors.As(err, &e) {
+					stale <- err
+					cancel()
+					return
+				}
+			}
+		}()
+		_, err := a(actx, t)
+		if err == nil {
+			return chromedp.Void{}, nil
+		}
+		select {
+		case serr := <-stale:
+			return chromedp.Void{}, serr
+		default:
+			return chromedp.Void{}, err
+		}
 	}
 }
 

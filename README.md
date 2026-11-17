@@ -110,7 +110,7 @@ It keeps the elements whose visible text contains `has_text`, runs of spaces and
           ref: ref_kqzm7
 ```
 
-The action waits for the element of the ref as it waits for one of a selector, to be visible for a click. A ref that names no element of the page, as one of a page the tab has left, fails the action at once, with the reason, rather than once `timeout` runs out. See [Reading the page as an outline](#reading-the-page-as-an-outline).
+The action waits for the element of the ref as it waits for one of a selector, to be visible for a click. A ref that names no element of the page, as one of a page the tab has left, fails the action at once, with the reason, rather than once `timeout` runs out, and so does one whose element the page takes out while the action waits for it, as an element of a ref that is gone does not come back. `wait_not_visible` waits for the element to go, so it passes then. See [Reading the page as an outline](#reading-the-page-as-an-outline).
 
 `text` and `wait_text` read the visible text of the element, and that of the open shadow roots in it, with the nodes a slot shows in its place: `innerText` leaves out both. So a `wait_text` on the element that holds a message body rendered into a shadow root sees the body, and `has_text` finds a component by the text it frames around what is slotted into it. The text of a shadow root is put together as `innerText` puts that of the document: a paragraph is parted from what is around it by a blank line, as a `<br>` makes a line of its own, and spaces run together as the style of the text has them.
 

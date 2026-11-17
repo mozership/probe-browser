@@ -55,16 +55,16 @@ func TestCollectResults_ReadPage(t *testing.T) {
 	}
 }
 
-func TestBuildActionTasks_ARefIsCheckedFirst(t *testing.T) {
+func TestBuildActionTasks_ARefIsGuarded(t *testing.T) {
 	req := NewReq()
 	req.Actions = []*ChromeDPAction{{Name: "click", Ref: "ref_abcd1"}}
 	tasks, err := req.buildActionTasks()
 	if err != nil {
 		t.Fatal(err)
 	}
-	// The check of the ref, then the click.
-	if len(tasks) != 2 {
-		t.Errorf("%d tasks, want the check of the ref and the click", len(tasks))
+	// The click, guarded by the check of its ref.
+	if len(tasks) != 1 {
+		t.Errorf("%d tasks, want the click", len(tasks))
 	}
 	if got := req.Actions[0].target().String(); got != "ref ref_abcd1" {
 		t.Errorf("the target is described as %q", got)

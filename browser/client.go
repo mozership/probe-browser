@@ -489,9 +489,8 @@ func (req *Req) buildActionTasks() ([]chromedp.Action[chromedp.Void], error) {
 		if err := action.checkTarget(); err != nil {
 			return nil, err
 		}
-		if tg.ref != "" {
-			tasks = append(tasks, checkRef(tg.ref))
-		}
+		// The tasks of the action, guarded below when it acts on a ref.
+		first := len(tasks)
 		switch action.Name {
 		case "navigate":
 			tasks = append(tasks, chromedp.Navigate(action.URL))
@@ -648,6 +647,13 @@ func (req *Req) buildActionTasks() ([]chromedp.Action[chromedp.Void], error) {
 			tasks = append(tasks, setUserVerified(va, verified))
 		default:
 			return nil, fmt.Errorf("unsupported action type: %s", action.Name)
+		}
+		// wait_not_visible waits for the element to go, which is not a ref
+		// gone wrong.
+		if tg.ref != "" && action.Name != "wait_not_visible" {
+			for i := first; i < len(tasks); i++ {
+				tasks[i] = guardRef(tg.ref, tasks[i])
+			}
 		}
 	}
 
