@@ -72,6 +72,9 @@ Each entry of `actions` names its action in `name` and takes these fields:
 | `not_contains` | `wait_text` | Wait until the text does not contain this, as when a placeholder such as `Loading` gives way to the content |
 | `matches` | `wait_text` | Wait until the text matches this regular expression, in [Go's syntax](https://pkg.go.dev/regexp/syntax) |
 | `cookie_name` | `get_cookie` | The name of the cookie to read |
+| `filter` | `read_page` | `all` reads the elements shown out of the viewport too, and `interactive` only those of the viewport one can act on. Without it, the elements shown in the viewport |
+| `depth` | `read_page` | How far containers, such as a form or a list, nest in the outline; `15` when unset |
+| `ref` | `read_page` | Read only the element of this ref, as an earlier `read_page` gave it, and what it holds |
 
 A `wait_text` takes at most one of `equals`, `contains`, `not_contains` and `matches`, and no other action takes them. An empty `contains` or `matches` is refused too, since any text would pass it, and so is an empty `not_contains`, since no text would. A workflow that sets them otherwise is refused before the browser starts.
 
@@ -121,6 +124,8 @@ These put a string in `res.results`, under `id` or the action's name.
 | `value` | The value of a form field, such as an `input` |
 | `get_attribute` | The first attribute in `attribute` of `selector`, or an empty string when the element does not have it |
 | `get_html` | The outer HTML of `selector`, once it is visible |
+| `read_page` | The page as an outline, a line for each element with its role, its name and a ref. See [Reading the page as an outline](#reading-the-page-as-an-outline) |
+| `page_text` | The text the page shows, its main content first, the text of the open shadow roots included |
 | `get_cookie` | The value of the cookie `cookie_name` the browser sends to the page open, HttpOnly ones included. It waits until the page has the cookie, as one set a moment after a sign-in. When `timeout` runs out first, the step fails with the names of the cookies the page has, but not their values. Of two with the name, it gives the one of the longer path, which the browser sends first; two of one path, which differ in their domains, fail the step, as which the browser sends first cannot be told |
 
 ### Interacting
@@ -331,6 +336,49 @@ A step that signs in can hand the token the app keeps in a cookie to a later ste
     outputs:
       token: res.results.token
 ```
+
+### Reading the page as an outline
+
+`read_page` reads the page by the roles and the names assistive technology gives its elements: a line for each element, with its role, its accessible name, what state it is in, and a ref that names it. It is what a test, or a model writing one, can read the page by without knowing its HTML.
+
+```yaml
+- name: Read the sign-up form
+  uses: browser
+  with:
+    actions:
+      - name: navigate
+        url: https://example.com/signup
+      - name: read_page
+        id: outline
+  test: res.results.outline contains 'button "Sign up"'
+```
+
+For a page of a sign-up form, the outline is:
+
+```
+main [ref_1]
+  heading "Create your account" level=1 [ref_2]
+  form [ref_3]
+    text "Email"
+    textbox "Email" type=email required [ref_4]
+    text "Password"
+    textbox "Password" type=password value="••••" [ref_5]
+    text "Plan"
+    combobox "Plan" value="Free" options="Free | Pro" [ref_6]
+    checkbox "I agree" unchecked [ref_7]
+    text "I agree"
+    button "Sign up" [ref_8]
+  navigation "Footer" [ref_9]
+    link "Next page" href="/next" [ref_10]
+```
+
+Containers, such as a form, a list or a navigation, nest the elements in them, and `depth` bounds how far; text that is not in an element of its own is a line `text "..."`. The value of a password is read as dots, and the elements hidden from the page, or from assistive technology with `aria-hidden`, are left out, as are those out of the viewport unless `filter` is `all`. Open shadow roots are read as the page shows them. A page longer than 50,000 characters is cut, with a line that says so.
+
+A ref names its element for as long as the element is in the document, so a later `read_page` with `ref` reads that element alone, as do the steps after it with [`session`](#keeping-the-browser-open), which drive the same document. A ref of a document the tab has left fails the action, which says to read the page again. Reading writes nothing to the page, so the application sees nothing of it.
+
+`page_text` reads the text the page shows, as `text` reads that of an element, with the main content, `main` or `role=main`, first.
+
+The package `github.com/mozership/probe-browser/outline` reads a page so for another Go tool that drives Chrome with chromedp.
 
 ### Carrying a login over
 

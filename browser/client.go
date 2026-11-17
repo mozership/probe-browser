@@ -16,6 +16,7 @@ import (
 
 	"github.com/chromedp/cdproto/webauthn"
 	"github.com/chromedp/chromedp"
+	"github.com/mozership/probe-browser/outline"
 	"github.com/mozership/probe/actionrpc"
 )
 
@@ -159,6 +160,12 @@ type ChromeDPAction struct {
 	HasText string `map:"has_text"`
 	// CookieName is the cookie get_cookie reads.
 	CookieName string `map:"cookie_name"`
+	// Filter, Depth and Ref are what read_page reads: the elements of the
+	// viewport, or of all the page or only those one can act on; how far
+	// containers nest; and the element of a ref alone. See outline.Read.
+	Filter string `map:"filter"`
+	Depth  int    `map:"depth"`
+	Ref    string `map:"ref"`
 	// given names which of the text fields the workflow wrote,
 	// since an empty string is otherwise the same as one left out.
 	given      []string
@@ -472,6 +479,9 @@ func (req *Req) buildActionTasks() ([]chromedp.Action[chromedp.Void], error) {
 		if action.Name != "get_cookie" && action.CookieName != "" {
 			return nil, fmt.Errorf("%s does not take cookie_name: only get_cookie does", action.Name)
 		}
+		if action.Name != "read_page" && (action.Filter != "" || action.Depth != 0 || action.Ref != "") {
+			return nil, fmt.Errorf("%s does not take filter, depth or ref: only read_page does", action.Name)
+		}
 		tg := action.target()
 		if err := action.checkTarget(); err != nil {
 			return nil, err
@@ -484,6 +494,17 @@ func (req *Req) buildActionTasks() ([]chromedp.Action[chromedp.Void], error) {
 		case "text":
 			var text string
 			tasks = append(tasks, readText(tg, false, &text))
+			action.reText = &text
+		case "read_page":
+			if err := outline.CheckFilter(action.Filter); err != nil {
+				return nil, fmt.Errorf("read_page: %w", err)
+			}
+			var text string
+			tasks = append(tasks, store(outline.Read(action.Filter, action.Depth, action.Ref), &text))
+			action.reText = &text
+		case "page_text":
+			var text string
+			tasks = append(tasks, store(outline.Text(), &text))
 			action.reText = &text
 		case "value":
 			var text string
@@ -633,7 +654,7 @@ func (req *Req) collectResults() (map[string]string, map[string]string, error) {
 
 	for _, action := range req.Actions {
 		switch action.Name {
-		case "text", "value", "get_attribute", "wait_text", "get_html", "wait_passkey", "get_cookie":
+		case "text", "value", "get_attribute", "wait_text", "get_html", "wait_passkey", "get_cookie", "read_page", "page_text":
 			key := action.Name
 			if action.ID != "" {
 				key = action.ID

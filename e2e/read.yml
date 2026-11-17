@@ -1,0 +1,57 @@
+name: Browser Read
+description: |
+  Reads the fixture page as an outline of its elements with read_page, one
+  element alone by its ref, and the text it shows with page_text, and keeps
+  the refs from one step to the next with session.
+  Serve the fixture page first, as e2e/workflow.yml does:
+  go run ./e2e/server
+actions:
+  browser: ./action
+vars:
+  url: "{{ URL ?? 'http://localhost:8090' }}"
+jobs:
+- name: Read
+  steps:
+  - name: Read the page as an outline and as text
+    uses: browser
+    with:
+      headless: true
+      session: true
+      timeout: 30s
+      actions:
+      - name: navigate
+        url: "{{vars.url}}/"
+      - name: wait_text
+        selector: "#status"
+        equals: "Ready: 3 items"
+      - name: read_page
+        id: outline
+      - name: read_page
+        id: interactive
+        filter: interactive
+      - name: page_text
+        id: text
+    test: |
+      res.code == 0 &&
+      res.results.outline contains 'heading "Probe Browser Fixture" level=1 [ref_1]' &&
+      res.results.outline contains 'text "Ready: 3 items"' &&
+      res.results.outline contains 'combobox "Size" value="Small"' &&
+      !(res.results.interactive contains "heading") &&
+      res.results.interactive contains 'combobox "Size"' &&
+      res.results.text contains "Probe Browser Fixture" &&
+      res.results.text contains "Ready: 3 items"
+
+  # The first read gave the refs in the order of the page, the heading
+  # first.
+  - name: The next step reads an element by the ref the first read gave it
+    uses: browser
+    with:
+      session: true
+      timeout: 30s
+      actions:
+      - name: read_page
+        id: heading
+        ref: ref_1
+    test: |
+      res.code == 0 &&
+      res.results.heading startsWith 'heading "Probe Browser Fixture"'
