@@ -14,6 +14,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"time"
 )
 
 func main() {
@@ -50,6 +51,15 @@ func handler(dir string) http.Handler {
 			return
 		}
 		fmt.Fprint(w, c.Value)
+	})
+	// /broken answers 500, and /slow answers after 300 milliseconds, for
+	// the requests the browser records.
+	mux.HandleFunc("GET /broken", func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "broken", http.StatusInternalServerError)
+	})
+	mux.HandleFunc("GET /slow", func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(300 * time.Millisecond)
+		fmt.Fprint(w, "slow")
 	})
 	return logged(mux)
 }

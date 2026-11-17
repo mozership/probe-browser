@@ -257,6 +257,10 @@ type Res struct {
 	// ConsoleErrors are the errors the page wrote to its console while the
 	// actions ran, in the order it wrote them.
 	ConsoleErrors []ConsoleError `map:"console_errors"`
+	// NetworkErrors are the requests of the page that failed while the
+	// actions ran, and Requests how many ended and the slowest of them.
+	NetworkErrors []NetworkError `map:"network_errors"`
+	Requests      Requests       `map:"requests"`
 }
 
 type Result struct {
@@ -842,8 +846,14 @@ func (req *Req) do() (*Result, error) {
 	defer cancel()
 
 	var console *consoleRecorder
+	var net *networkRecorder
 	if c, ok := req.browserRunner.(consoleReader); ok {
 		console = recordConsole(browserCtx, c.Console)
+	}
+	// Only of a browser of chromedp: on another context, as of a mock, the
+	// events of chromedp would start a browser of their own.
+	if _, ok := req.browserRunner.(*ChromeDPRunner); ok {
+		net = recordNetwork(browserCtx)
 	}
 
 	ctx, actionsCancel := context.WithDeadline(browserCtx, deadline)
@@ -851,9 +861,11 @@ func (req *Req) do() (*Result, error) {
 
 	if err := req.browserRunner.Run(ctx, tasks...); err != nil {
 		errs := console.stop(browserCtx, req.browserRunner.Run)
-		return nil, req.withEvidence(browserCtx, withConsoleErrors(err, errs))
+		netErrs, _ := net.stop()
+		return nil, req.withEvidence(browserCtx, withNetworkErrors(withConsoleErrors(err, errs), netErrs))
 	}
 	consoleErrors := console.stop(browserCtx, req.browserRunner.Run)
+	networkErrors, requests := net.stop()
 
 	results, filePaths, err := req.collectResults()
 	if err != nil {
@@ -865,6 +877,8 @@ func (req *Req) do() (*Result, error) {
 		Results:       results,
 		FilePaths:     filePaths,
 		ConsoleErrors: consoleErrors,
+		NetworkErrors: networkErrors,
+		Requests:      requests,
 	}
 	ret := &Result{
 		Req:    *req,

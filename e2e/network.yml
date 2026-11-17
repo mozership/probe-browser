@@ -1,0 +1,35 @@
+name: Browser Network
+description: |
+  Records the requests of the page while the actions run: a request the
+  server answers with 500 and one that reaches no server as network errors,
+  and how many requests ended and the slowest of them.
+  Serve the fixture page first, as e2e/workflow.yml does:
+  go run ./e2e/server
+actions:
+  browser: ./action
+vars:
+  url: "{{ URL ?? 'http://localhost:8090' }}"
+jobs:
+- name: Network
+  steps:
+  - name: The page fetches a broken, a refused and a slow request
+    uses: browser
+    with:
+      headless: true
+      timeout: 30s
+      actions:
+      - name: navigate
+        url: "{{vars.url}}/network.html"
+      - name: click
+        selector: "#fetch"
+      - name: wait_text
+        selector: "#done"
+        equals: done
+    test: |
+      res.code == 0 &&
+      len(res.network_errors) == 2 &&
+      len(filter(res.network_errors, .url == vars.url + "/broken" && .status == 500 && .method == "GET")) == 1 &&
+      len(filter(res.network_errors, .url == "http://127.0.0.1:59999/refused" && .status == 0 && .error != "")) == 1 &&
+      res.requests.count == 4 &&
+      res.requests.slowest[0].url == vars.url + "/slow" &&
+      res.requests.slowest[0].duration_ms >= 300
