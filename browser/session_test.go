@@ -472,6 +472,9 @@ func TestRunStep_GoesOnWithARequestPending(t *testing.T) {
 	if p := pendingFromState(state); len(p) != 1 || !strings.HasSuffix(p[0].URL, "/slow") {
 		t.Fatalf("pending %+v, want the slow request", p)
 	}
+	// A while between the steps, which the request's time includes, as it
+	// is timed from when it was sent, not from the step it ends in.
+	time.Sleep(700 * time.Millisecond)
 	res := step(
 		map[string]any{"name": "click", "selector": "#release"},
 		map[string]any{"name": "wait_text", "selector": "#out", "equals": "slow"},
@@ -485,8 +488,8 @@ func TestRunStep_GoesOnWithARequestPending(t *testing.T) {
 	if slow == nil {
 		t.Fatalf("requests %v, want the slow one the step before sent", res["requests"])
 	}
-	if ms, _ := slow["duration_ms"].(int64); ms < 300 || slow["status"] != int64(200) {
-		t.Errorf("the slow request %v, want it answered, of 300 ms or more", slow)
+	if ms, _ := slow["duration_ms"].(int64); ms < 1000 || slow["status"] != int64(200) {
+		t.Errorf("the slow request %v, want it answered, of 1000 ms or more, the 700 between the steps and the 300 of the answer", slow)
 	}
 	if p := pendingFromState(state); len(p) != 0 {
 		t.Errorf("pending %+v after it ended", p)
