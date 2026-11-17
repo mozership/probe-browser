@@ -500,7 +500,7 @@ var elementActions = map[string]bool{
 	"click": true, "double_click": true, "right_click": true, "hover": true,
 	"type": true, "send_keys": true, "set_value": true, "select": true,
 	"focus": true, "submit": true, "scroll": true, "screenshot": true,
-	"press": true, "wheel": true,
+	"press": true, "wheel": true, "form_input": true, "locator": true,
 }
 
 // checkTarget refuses an action on an element that names none, and

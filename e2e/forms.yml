@@ -1,0 +1,111 @@
+name: Browser Forms
+description: |
+  Sets form fields as a user's input does with form_input, reads the alerts
+  the page shows, and describes an element with locator, which locate finds
+  again in a later step.
+  Serve the fixture page first, as e2e/workflow.yml does:
+  go run ./e2e/server
+actions:
+  browser: ./action
+vars:
+  url: "{{ URL ?? 'http://localhost:8090' }}"
+jobs:
+- name: Forms
+  steps:
+  - name: Fill the fields and read the alert
+    uses: browser
+    with:
+      headless: true
+      timeout: 30s
+      actions:
+      - name: navigate
+        url: "{{vars.url}}/forms.html"
+      - name: form_input
+        id: agree
+        selector: "#agree"
+        value: "true"
+      - name: form_input
+        id: pro
+        selector: "#pro"
+        value: "true"
+      - name: form_input
+        id: size
+        selector: "#size"
+        value: Large
+      - name: form_input
+        id: note
+        selector: "#note"
+        value: A note
+      - name: form_input
+        id: editor
+        selector: "#editor"
+        value: new text
+      - name: value
+        id: size_value
+        selector: "#size"
+      - name: text
+        id: editor_text
+        selector: "#editor"
+      - name: alerts
+        id: alerts
+    test: |
+      res.code == 0 &&
+      res.results.agree == 'Checked "#agree".' &&
+      res.results.pro == 'Checked "#pro".' &&
+      res.results.size == 'Selected "Large" in "#size".' &&
+      res.results.size_value == "l" &&
+      res.results.note == 'Set the value of "#note".' &&
+      res.results.editor_text == "new text" &&
+      res.results.alerts == "Saved"
+
+  - name: Describe the first of two buttons of one name
+    uses: browser
+    with:
+      headless: true
+      session: true
+      timeout: 30s
+      actions:
+      - name: navigate
+        url: "{{vars.url}}/forms.html"
+      - name: locator
+        id: first
+        selector: button
+        has_text: Delete
+      - name: locator
+        id: by_point
+        x: 5
+        y: 5
+    test: |
+      res.code == 0 &&
+      res.results.by_point == "" &&
+      res.results.first == '{"role":"button","name":"Delete","of":2}'
+
+  - name: Find the second button again
+    uses: browser
+    with:
+      session: true
+      timeout: 30s
+      actions:
+      - name: locate
+        id: ref
+        locator:
+          role: button
+          name: Delete
+          nth: 1
+          of: 2
+    test: res.code == 0 && res.results.ref matches '^ref_[a-z]{4}[0-9]+$'
+    outputs:
+      ref: res.results.ref
+
+  - name: Click the button it found
+    uses: browser
+    with:
+      session: true
+      timeout: 30s
+      actions:
+      - name: click
+        ref: "{{outputs.ref}}"
+      - name: text
+        id: deleted
+        selector: "#deleted"
+    test: res.code == 0 && res.results.deleted == "deleted row 2"

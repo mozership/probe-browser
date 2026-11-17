@@ -502,13 +502,17 @@
 
   // formInput sets the value of a form field as a user's input does, firing
   // input and change, and says what it did.
-  const formInput = (ref, value) => {
-    const el = byRef(ref);
+  const formInput = (ref, value) => fill(byRef(ref), value, ref);
+
+  // fill sets the value of the form field el as formInput does, naming it
+  // as name in what it says.
+  const fill = (el, value, name = 'the element') => {
+    const ref = name;
     const fire = () => {
       el.dispatchEvent(new Event('input', { bubbles: true }));
       el.dispatchEvent(new Event('change', { bubbles: true }));
     };
-    if (el.disabled) throw new Error(ref + ' is disabled');
+    if (el.matches(':disabled')) throw new Error(ref + ' is disabled');
     if (el.tagName === 'SELECT') {
       const want = String(value);
       const opts = Array.from(el.options);
@@ -657,6 +661,6 @@
     return f(...args);
   };
   window.__probeOutline = Object.fromEntries(Object.entries({
-    read, point, scrollTo, focus, formInput, text, locator, locate, alerts, element: byRef,
+    read, point, scrollTo, focus, formInput, fill, text, locator, locatorOf, locate, alerts, element: byRef,
   }).map(([name, f]) => [name, fresh(f)]));
 })();

@@ -63,7 +63,7 @@ Each entry of `actions` names its action in `name` and takes these fields:
 | `url` | `navigate` | The address to open |
 | `selector` | actions on an element | A CSS selector, or `ref` in its place. It finds elements in open shadow roots too. See [Finding an element](#finding-an-element) |
 | `has_text` | actions on an element | Of the elements `selector` matches, or of all without it, take the innermost whose visible text contains this. See [Finding an element](#finding-an-element) |
-| `value` | `type`, `send_keys`, `press`, `set_value`, `select`, `set_user_verified` | The text to use. Of `press`, the key, as `Enter` or `Shift+Tab`. Of `set_user_verified`, `true` or `false` |
+| `value` | `type`, `send_keys`, `press`, `set_value`, `select`, `form_input`, `set_user_verified` | The text to use. Of `press`, the key, as `Enter` or `Shift+Tab`. Of `set_user_verified`, and of `form_input` on a checkbox or a radio, `true` or `false` |
 | `attribute` | `get_attribute` | The attribute to read, as `href` or `[href]`. Of a list, only the first entry is read |
 | `quality` | `full_screenshot`, `capture_screenshot` | `1` to `99` saves JPEG at that quality. Anything else, including unset, `0`, `100` and above, or a negative number, saves PNG |
 | `path` | screenshots, `save_storage_state`, `save_passkeys` | Of a screenshot, deprecated: also write the image to this path; use `res.filepaths` instead. Of `save_storage_state` and `save_passkeys`, where to write the file, in place of a new one in the temporary directory |
@@ -79,6 +79,7 @@ Each entry of `actions` names its action in `name` and takes these fields:
 | `x`, `y`, `width`, `height`, `scale` | `capture_screenshot` | The region of the viewport to capture, in CSS pixels from its top left corner, and how many times to enlarge it, 1 to 4 |
 | `filter` | `read_page` | `all` reads the elements shown out of the viewport too, and `interactive` only those of the viewport one can act on. Without it, the elements shown in the viewport |
 | `depth` | `read_page` | How far containers, such as a form or a list, nest in the outline; `15` when unset |
+| `locator` | `locate` | The element to find, as `locator` describes it: `role`, `name`, and `nth` and `of` when other elements have both. See [Finding an element again](#finding-an-element-again) |
 | `ref` | `read_page`, actions on an element | The ref of an element, as an earlier `read_page` gave it. Of `read_page`, read only that element and what it holds; of an action on an element, the element it acts on, in place of `selector` and `has_text`. See [Finding an element](#finding-an-element) |
 
 A `wait_text` takes at most one of `equals`, `contains`, `not_contains` and `matches`, and no other action takes them. An empty `contains` or `matches` is refused too, since any text would pass it, and so is an empty `not_contains`, since no text would. A workflow that sets them otherwise is refused before the browser starts.
@@ -151,6 +152,9 @@ These put a string in `res.results`, under `id` or the action's name.
 | `title` | The title of the page open |
 | `read_page` | The page as an outline, a line for each element with its role, its name and a ref. See [Reading the page as an outline](#reading-the-page-as-an-outline) |
 | `page_text` | The text the page shows, its main content first, the text of the open shadow roots included |
+| `alerts` | The texts of the alerts the page shows, the elements of role `alert` or `alertdialog`, one a line, those in open shadow roots included, or an empty string |
+| `locator` | How to find `selector`, or the element one can act on at the point `x`, `y`, again on a page drawn anew: its role, its accessible name, and, when other elements have both, which of how many it is, as JSON, such as `{"role":"button","name":"Delete","nth":1,"of":2}`, or an empty string for an element of no role, or a point with nothing to act on. See [Finding an element again](#finding-an-element-again) |
+| `locate` | The ref of the element `locator` describes, once it appears. See [Finding an element again](#finding-an-element-again) |
 | `get_cookie` | The value of the cookie `cookie_name` the browser sends to the page open, HttpOnly ones included. It waits until the page has the cookie, as one set a moment after a sign-in. When `timeout` runs out first, the step fails with the names of the cookies the page has, but not their values. Of two with the name, it gives the one of the longer path, which the browser sends first; two of one path, which differ in their domains, fail the step, as which the browser sends first cannot be told |
 
 ### Interacting
@@ -168,6 +172,7 @@ These act on the page the way a user would. They return nothing.
 | `submit` | Submits the form `selector` belongs to |
 | `focus` | Focuses `selector` |
 | `scroll` | Scrolls `selector` into view |
+| `form_input` | Sets the form field `selector` to `value`, once it is visible, as a user's input does, firing `input` and `change`, and puts what it did in `res.results`: chooses the option of a `<select>` whose value or label is `value`, checks or unchecks a checkbox or a radio by `true` or `false`, sets the value of an `input` or a `textarea`, and the text of a contenteditable element. A field that is disabled, a disabled `<fieldset>` around it included, an option that is not there, and an element that is no field, fail the step with the reason |
 | `select` | Chooses the option of the `<select>` at `selector` whose value is `value`, or else whose label is, once it is visible, and fires `input` and `change` as a user's choice does. An option that is not there or is disabled, a `<select>` that is disabled, and an element that is not a `<select>`, fail the step with the reason, a `disabled` on an `<optgroup>` or a `<fieldset>` around them included; the values of the options are in the message. Of a `<select multiple>`, the option is added to those chosen |
 | `hover` | Sends a `mouseover` event to `selector`. It does not wait, and does nothing when nothing matches. At the point `x`, `y`, it moves the mouse there |
 | `right_click` | Sends a `contextmenu` event to `selector`. It does not wait, and does nothing when nothing matches. At the point `x`, `y`, it clicks there with the right button of the mouse |
@@ -424,6 +429,22 @@ A ref is `ref_`, four letters drawn for the document, and a number counted from 
 `page_text` reads the text the page shows, as `text` reads that of an element, with the main content, `main` or `role=main`, first.
 
 The package `github.com/mozership/probe-browser/outline` reads a page so for another Go tool that drives Chrome with chromedp.
+
+### Finding an element again
+
+A ref names its element only in its document, so a test that is to act on the same element of the page in a later run, or after the page is loaded anew, describes it with `locator`, and finds it again with `locate`, which waits for it as for a page still being drawn, and puts its ref in `res.results`:
+
+```yaml
+        - name: locate
+          id: delete
+          locator:
+            role: button
+            name: Delete
+            nth: 1
+            of: 2
+```
+
+`role` and `name` are as `read_page` shows them; `nth`, from 0, and `of` tell the element among those of the role and the name, and are left out of a `locator` when it is the only one. A page that shows another number of them than `of` fails `locate` at once, with how many it has, as waiting does not tell them apart; one that shows none fails it once `timeout` runs out.
 
 ### Carrying a login over
 

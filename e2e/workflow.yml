@@ -165,6 +165,16 @@ jobs:
     test: res.code == 0
     echo: "{{res.stdout}}"
 
+  - name: forms.yml
+    uses: shell
+    with:
+      cmd: probe e2e/forms.yml
+      timeout: 2m
+      env:
+        DISPLAY: ":99"
+    test: res.code == 0
+    echo: "{{res.stdout}}"
+
   - name: passkey.yml
     uses: shell
     with:

@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Probe Browser Forms Fixture</title>
+  <link rel="icon" href="data:,">
+</head>
+<body>
+  <h1>Forms</h1>
+  <form id="form">
+    <label><input id="agree" type="checkbox"> I agree</label>
+    <label><input type="radio" name="plan" value="free" checked> Free</label>
+    <label><input id="pro" type="radio" name="plan" value="pro"> Pro</label>
+    <label for="size">Size</label>
+    <select id="size"><option value="s">Small</option><option value="l">Large</option></select>
+    <label for="note">Note</label>
+    <textarea id="note"></textarea>
+    <div id="editor" contenteditable="true">a draft</div>
+  </form>
+  <p id="changed">none</p>
+  <!-- An alert the page shows once a field changes. -->
+  <div id="status" role="alert" hidden></div>
+  <!-- Two buttons of one name, which a locator tells apart by their order. -->
+  <ul>
+    <li>First <button type="button" class="delete" data-row="1">Delete</button></li>
+    <li>Second <button type="button" class="delete" data-row="2">Delete</button></li>
+  </ul>
+  <p id="deleted">none</p>
+  <script>
+    document.getElementById("form").addEventListener("change", (e) => {
+      document.getElementById("changed").textContent = "changed: " + (e.target.id || e.target.value);
+      const status = document.getElementById("status");
+      status.textContent = "Saved";
+      status.hidden = false;
+    });
+    for (const b of document.querySelectorAll(".delete")) {
+      b.addEventListener("click", () => {
+        document.getElementById("deleted").textContent = "deleted row " + b.dataset.row;
+      });
+    }
+  </script>
+</body>
+</html>
