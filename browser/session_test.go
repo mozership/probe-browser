@@ -501,18 +501,22 @@ func TestRunStep_GoesOnWithARequestPending(t *testing.T) {
 // steps, where no step sees it: of one the step sent and waited
 // networkSettle for, and of one the page sent by a timer once the step
 // had ended. The next step takes it from the page's timing, as a network
-// error.
+// error, though it leaves the page at once.
 func TestRunStep_ARequestAnsweredBetweenTheSteps(t *testing.T) {
 	if testing.Short() {
 		t.Skip("starts Chrome")
 	}
 	t.Setenv(CacheDirEnv, t.TempDir())
+	waitError := map[string]any{"name": "wait_text", "selector": "body", "contains": "Internal Server Error"}
+	leave := map[string]any{"name": "navigate", "url": "about:blank"}
 	for name, tc := range map[string]struct {
 		delay  time.Duration
 		submit string
+		next   map[string]any
 	}{
-		"answered late":   {networkSettle + 500*time.Millisecond, `this.form.submit()`},
-		"sent by a timer": {0, `setTimeout(() => this.form.submit(), 300)`},
+		"answered late":         {networkSettle + 500*time.Millisecond, `this.form.submit()`, waitError},
+		"sent by a timer":       {0, `setTimeout(() => this.form.submit(), 300)`, waitError},
+		"left by the next step": {0, `setTimeout(() => this.form.submit(), 300)`, leave},
 	} {
 		t.Run(name, func(t *testing.T) {
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -527,7 +531,7 @@ func TestRunStep_ARequestAnsweredBetweenTheSteps(t *testing.T) {
 			defer srv.Close()
 
 			a := &Action{log: hclog.NewNullLogger()}
-			run := "run-between-" + strconv.Itoa(os.Getpid()) + "-" + strconv.Itoa(int(tc.delay))
+			run := "run-between-" + strconv.Itoa(os.Getpid()) + "-" + strings.ReplaceAll(name, " ", "-")
 			t.Cleanup(func() { _ = cleanupSessions(run) })
 			var state map[string]any
 			step := func(actions ...any) map[string]any {
@@ -555,7 +559,7 @@ func TestRunStep_ARequestAnsweredBetweenTheSteps(t *testing.T) {
 				t.Fatalf("network errors %s of the first step, want the sign-up answered after it", errs)
 			}
 			time.Sleep(time.Second)
-			res := step(map[string]any{"name": "wait_text", "selector": "body", "contains": "Internal Server Error"})
+			res := step(tc.next)
 			if errs := fmt.Sprint(res["network_errors"]); !strings.Contains(errs, "/signup") || !strings.Contains(errs, "500") {
 				t.Errorf("network errors %s, want the sign-up's 500", errs)
 			}

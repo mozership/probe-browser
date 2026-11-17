@@ -83,13 +83,20 @@ type netRequest struct {
 	errText     string
 	notHTTP     bool
 	gotResponse bool
+	// wall is when it was sent, in milliseconds of the Unix epoch, by
+	// which the page's timing of it is told from another's of its URL.
+	wall float64
 	// carried is a request an earlier step left pending, whose response
 	// can have come between the steps, unseen.
 	carried bool
-	// timedMS is how long a carried request took, as the page timed it,
-	// when it ended between the steps, and no event told of its end.
+	// timedMS is how long a request took, as the page timed it, when no
+	// event told of when it was sent or when it ended, as it was between
+	// the steps.
 	timedMS int64
 	timed   bool
+	// gone is a carried request that ended unseen with the document it
+	// was of, which is neither counted nor carried on.
+	gone bool
 }
 
 // networkRecorder keeps the events of the requests of the page from when
@@ -108,24 +115,13 @@ type networkRecorder struct {
 	inflight map[string]bool
 	// pending are the requests an earlier step left.
 	pending []pendingRequest
-	// since is where on the page the step before stopped recording, from
-	// where the page's own timings of the requests that ended before this
-	// step began recording are read; at is where this step began. Either
-	// is nil when not known.
-	since, at *pageMark
+	// since is when the step before stopped recording, and started when
+	// this one began, in milliseconds of the Unix epoch, 0 when not known;
+	// first are the page's timings as this one began, from which what
+	// ended between them is read.
+	since, started float64
+	first          *pageTimings
 }
-
-// pageMark is a moment of a page: its document, by the time its timeline
-// began, and the time of its timeline then, in milliseconds.
-type pageMark struct {
-	Origin float64 `json:"origin"`
-	Now    float64 `json:"now"`
-}
-
-// pageMarkScript returns the pageMark of now, and lets the page keep the
-// timings of more resources than the 250 it keeps at first, so that those
-// of a page long open are read too.
-const pageMarkScript = `(() => { performance.setResourceTimingBufferSize(10000); return {origin: performance.timeOrigin, now: performance.now()}; })()`
 
 // networkIdle is how long stop waits for no event to come, before it puts
 // the requests together: the events of what the actions did are sent
@@ -164,6 +160,8 @@ type pendingRequest struct {
 	Sent     float64 `json:"sent"`
 	Status   int64   `json:"status,omitempty"`
 	Response bool    `json:"response,omitempty"`
+	// Wall is when it was sent, in milliseconds of the Unix epoch.
+	Wall float64 `json:"wall,omitempty"`
 }
 
 // maxPending bounds the requests a step leaves to the next, the latest
@@ -172,14 +170,16 @@ const maxPending = 100
 
 // recordNetwork starts keeping the events of the requests of the tab of
 // ctx until stop, going on with the requests pending an earlier step of a
-// kept browser saw, and from since, where on the page it stopped.
-func recordNetwork(ctx context.Context, pending []pendingRequest, since *pageMark) *networkRecorder {
+// kept browser saw, and from since, when the step before stopped
+// recording, in milliseconds of the Unix epoch, 0 when not known.
+func recordNetwork(ctx context.Context, pending []pendingRequest, since float64) *networkRecorder {
 	c := chromedp.FromContext(ctx)
 	if c == nil || c.Target == nil {
 		return nil
 	}
 	ctx, cancel := context.WithCancel(ctx)
-	r := &networkRecorder{cancel: cancel, events: map[string][]jsonv2.Value{}, last: time.Now(), inflight: map[string]bool{}, pending: pending, since: since}
+	// What ends from now on is this step's, and seen by it.
+	r := &networkRecorder{cancel: cancel, events: map[string][]jsonv2.Value{}, last: time.Now(), inflight: map[string]bool{}, pending: pending, since: since, started: epochMS(time.Now())}
 	for _, m := range networkMethods {
 		events, unsubscribe := c.Target.Subscribe(m)
 		r.wg.Go(func() {
@@ -278,6 +278,7 @@ func (s *requestSet) apply(method string, raw jsonv2.Value) error {
 		// A redirect is timed from the first request.
 		if q.sent == 0 {
 			q.sent = ev.Timestamp.Float64()
+			q.wall = ev.WallTime.Float64() * 1000
 		}
 		if ev.Request != nil {
 			q.method, q.url = ev.Request.Method, ev.Request.URL
@@ -327,7 +328,7 @@ func (s *requestSet) settle() {
 		// A request carried from a step before that finished is counted
 		// though its response came unseen, between the steps: of a status
 		// not known, 0, which is not taken for an error.
-		if q.sent == 0 || q.ended == 0 || (!q.failed && !q.gotResponse && !q.carried) || q.notHTTP {
+		if q.gone || (q.sent == 0 && !q.timed) || q.ended == 0 || (!q.failed && !q.gotResponse && !q.carried) || q.notHTTP {
 			continue
 		}
 		s.requests.Count++
@@ -369,76 +370,54 @@ func slowest(list []SlowRequest, req SlowRequest) []SlowRequest {
 	return list[:min(len(list), maxSlowest)]
 }
 
-// resourceTiming is a request as the page timed it, from its performance
-// entries: of the document, or of a resource it loaded, from when it
-// started to its last byte, on the page's timeline.
-type resourceTiming struct {
-	URL    string  `json:"url"`
-	Status int64   `json:"status"`
-	Start  float64 `json:"start"`
-	End    float64 `json:"end"`
-}
-
-// pageTimings are the requests of the page that ended, as it timed them,
-// and the page's mark of when they were read.
-type pageTimings struct {
-	pageMark
-	Entries []resourceTiming `json:"entries"`
-}
-
-// pageTimingsScript returns the pageTimings of now, the document first,
-// then the resources in the order they started.
-const pageTimingsScript = `({origin: performance.timeOrigin, now: performance.now(),
-  entries: performance.getEntriesByType('navigation').concat(performance.getEntriesByType('resource'))
-    .filter((e) => e.responseEnd > 0)
-    .map((e) => ({url: e.name, status: e.responseStatus || 0, start: e.startTime, end: e.responseEnd}))})`
-
-// stop ends the recording, once no event has come for networkIdle and the
-// requests sent while it recorded have ended, and returns the requests:
-// those that ended by then, as the events of what the actions did came
-// before the end mark of the console, which is read first, on the same
-// connection, and those of the page that ended while it waited. It waits
-// networkDrain at most for the events to go quiet, and networkSettle at
-// most for the requests to end.
+// stop ends the recording and returns the requests: those that ended by
+// then, as the events of what the actions did came before the end mark of
+// the console, which is read first, on the same connection, and those of
+// the page that ended while it waited. It waits for the requests sent
+// while it recorded to end, networkSettle at most, as for a form the last
+// action sent, and then for no event to come for networkIdle,
+// networkDrain at most, as of a page that polls.
 //
 // What ended between the steps of a kept browser, which no event tells
-// of, is taken from timings, the requests the page timed: a request
-// carried from a step before, by its URL, and one sent after the step
-// before stopped recording that ended before this one began, as a form
-// sent as the step before ended. One the page has no status of, as of
-// another origin, is of status 0. It returns too where on the page it
-// stopped, for the next step, when timings tell it.
+// of, is taken from the page's own timings: first, as this step began,
+// and those timings reads now; see reconcile. It returns too when it
+// stopped, in milliseconds of the Unix epoch, for the next step.
 //
 // A nil recorder, as for a runner that reads no network, has none.
-func (r *networkRecorder) stop(timings func() *pageTimings) ([]NetworkError, Requests, []pendingRequest, *pageMark) {
+func (r *networkRecorder) stop(timings func() *pageTimings) ([]NetworkError, Requests, []pendingRequest, float64) {
 	set := &requestSet{byID: map[network.RequestID]*netRequest{}, errs: []NetworkError{}, requests: Requests{Slowest: []SlowRequest{}}}
 	if r == nil {
-		return set.errs, set.requests, nil, nil
+		return set.errs, set.requests, nil, 0
 	}
 	for _, p := range r.pending {
 		q := set.of(network.RequestID(p.ID))
-		q.method, q.url, q.sent, q.status, q.gotResponse = p.Method, p.URL, p.Sent, p.Status, p.Response
+		q.method, q.url, q.sent, q.status, q.gotResponse, q.wall = p.Method, p.URL, p.Sent, p.Status, p.Response, p.Wall
 		q.carried = true
 		q.notHTTP = !isHTTP(q.url)
 	}
-	start := time.Now()
-	drain, settle := start.Add(networkDrain), start.Add(networkSettle)
+	settle := time.Now().Add(networkSettle)
 	for {
 		r.mu.Lock()
-		quiet, waiting := time.Since(r.last), r.waiting()
+		waiting := r.waiting()
 		r.mu.Unlock()
-		now := time.Now()
-		if !waiting && (quiet >= networkIdle || !now.Before(drain)) || !now.Before(settle) {
+		if !waiting || !time.Now().Before(settle) {
 			break
 		}
-		wait := networkIdle - quiet
-		if wait <= 0 {
-			wait = networkIdle
+		time.Sleep(10 * time.Millisecond)
+	}
+	drain := time.Now().Add(networkDrain)
+	for {
+		r.mu.Lock()
+		quiet := time.Since(r.last)
+		r.mu.Unlock()
+		if quiet >= networkIdle || !time.Now().Before(drain) {
+			break
 		}
-		time.Sleep(max(time.Millisecond, min(wait, time.Until(settle))))
+		time.Sleep(max(time.Millisecond, min(networkIdle-quiet, time.Until(drain))))
 	}
 	r.cancel()
 	r.wg.Wait()
+	stopped := epochMS(time.Now())
 	// The events of each method are taken in turn, all of one before the
 	// next, in the order of networkMethods.
 	for _, m := range networkMethods {
@@ -446,68 +425,11 @@ func (r *networkRecorder) stop(timings func() *pageTimings) ([]NetworkError, Req
 			_ = set.apply(m, raw)
 		}
 	}
-	var end *pageMark
 	if timings != nil {
-		if t := timings(); t != nil {
-			end = &t.pageMark
-			used := set.timeUntimed(t.Entries)
-			if r.since != nil && r.at != nil && r.at.Origin == t.Origin {
-				set.addBetween(t.Entries, used, *r.since, *r.at)
-			}
-		}
+		set.reconcile(r.since, r.started, r.first, timings())
 	}
 	set.settle()
-	return set.errs, set.requests, set.pending(), end
-}
-
-// timeUntimed times by the first of timings of its URL each request whose
-// events leave it untimed: one carried from a step before that no event
-// was seen to end, as it ended between the steps, and one ended that no
-// event was seen sent, as it was sent between them. It takes the status
-// the page had of it when no event told it, and how long the page took
-// for it. Each timing times one request at most; it returns those used.
-func (s *requestSet) timeUntimed(timings []resourceTiming) []bool {
-	used := make([]bool, len(timings))
-	for _, id := range s.order {
-		q := s.byID[id]
-		carried := q.carried && q.ended == 0
-		unsent := q.sent == 0 && q.ended != 0 && q.gotResponse && q.url != ""
-		if (!carried && !unsent) || q.notHTTP {
-			continue
-		}
-		for i, t := range timings {
-			if used[i] || t.URL != q.url {
-				continue
-			}
-			used[i] = true
-			if q.sent == 0 {
-				q.sent = 1
-			}
-			q.ended, q.timed, q.timedMS = q.sent, true, int64(math.Round(t.End-t.Start))
-			q.gotResponse = true
-			if q.status == 0 {
-				q.status = t.Status
-			}
-			break
-		}
-	}
-	return used
-}
-
-// addBetween adds the requests of timings not used that the page sent
-// after since, where the step before stopped recording, and that ended
-// before at, where this one began: every request of the document at is of
-// is after since when since is of another document.
-func (s *requestSet) addBetween(timings []resourceTiming, used []bool, since, at pageMark) {
-	for i, t := range timings {
-		if used[i] || t.End > at.Now || (since.Origin == at.Origin && t.Start < since.Now) {
-			continue
-		}
-		q := s.of(network.RequestID(fmt.Sprintf("timing-%d", i)))
-		q.url, q.notHTTP = t.URL, !isHTTP(t.URL)
-		q.sent, q.ended, q.gotResponse = 1, 1, true
-		q.timed, q.timedMS, q.status = true, int64(math.Round(t.End-t.Start)), t.Status
-	}
+	return set.errs, set.requests, set.pending(), stopped
 }
 
 // pending returns the requests sent and not ended, of HTTP or HTTPS, the
@@ -516,10 +438,12 @@ func (s *requestSet) pending() []pendingRequest {
 	var out []pendingRequest
 	for _, id := range s.order {
 		q := s.byID[id]
-		if q.sent == 0 || q.ended != 0 || q.notHTTP {
+		// One this step saw the response of, and not sent, is left too,
+		// for the next to time it once it ends.
+		if q.gone || (q.sent == 0 && !(q.gotResponse && q.url != "")) || q.ended != 0 || q.notHTTP {
 			continue
 		}
-		out = append(out, pendingRequest{ID: string(id), Method: q.method, URL: q.url, Sent: q.sent, Status: q.status, Response: q.gotResponse})
+		out = append(out, pendingRequest{ID: string(id), Method: q.method, URL: q.url, Sent: q.sent, Status: q.status, Response: q.gotResponse, Wall: q.wall})
 	}
 	slices.SortStableFunc(out, func(a, b pendingRequest) int { return cmp.Compare(a.Sent, b.Sent) })
 	return out[max(0, len(out)-maxPending):]

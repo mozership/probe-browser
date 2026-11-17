@@ -225,66 +225,6 @@ func TestDo_NoRequestOfTheStorageState(t *testing.T) {
 	}
 }
 
-// TestRequestSet_ACarriedRequestTimedByThePage settles a request a step
-// before left pending, which ended between the steps, so that no event of
-// this step tells of its end: the page's timing of it gives its status
-// and how long it took.
-func TestRequestSet_ACarriedRequestTimedByThePage(t *testing.T) {
-	s := newRequestSet()
-	q := s.of("c")
-	q.method, q.url, q.sent, q.carried = "POST", "https://a/signup", 1, true
-	p := s.of("p")
-	p.method, p.url, p.sent, p.carried = "GET", "https://a/stream", 1, true
-	used := s.timeUntimed([]resourceTiming{{URL: "https://a/other", Status: 200, Start: 1, End: 6}, {URL: "https://a/signup", Status: 500, Start: 3, End: 15.4}})
-	s.settle()
-	if s.requests.Count != 1 || len(s.errs) != 1 || s.errs[0].String() != "POST https://a/signup 500" {
-		t.Fatalf("count %d, errors %v; want the sign-up, an error", s.requests.Count, s.errs)
-	}
-	if r := s.requests.Slowest[0]; r.DurationMS != 12 || r.Status != 500 {
-		t.Errorf("the request %+v", r)
-	}
-	if got := s.pending(); len(got) != 1 || got[0].URL != "https://a/stream" {
-		t.Errorf("pending %+v, want the stream alone", got)
-	}
-	if used[0] || !used[1] {
-		t.Errorf("used %v, want the sign-up's timing alone", used)
-	}
-}
-
-// TestRequestSet_SentBetweenTheSteps adds the requests the page timed
-// that were sent after the step before stopped and ended before this one
-// began, and times one whose response alone this step saw.
-func TestRequestSet_SentBetweenTheSteps(t *testing.T) {
-	timings := []resourceTiming{
-		{URL: "https://a/old", Status: 200, Start: 10, End: 20},    // before since
-		{URL: "https://a/api", Status: 502, Start: 120, End: 150},  // between
-		{URL: "https://a/late", Status: 200, Start: 130, End: 260}, // into this step
-		{URL: "https://a/now", Status: 200, Start: 210, End: 230},  // of this step
-	}
-	since, at := pageMark{Origin: 1000, Now: 100}, pageMark{Origin: 1000, Now: 200}
-
-	s := newRequestSet()
-	event(t, s, network.ResponseReceived.Method, `{"requestId":"l","response":{"url":"https://a/late","status":200}}`)
-	event(t, s, network.LoadingFinished.Method, `{"requestId":"l","timestamp":3}`)
-	used := s.timeUntimed(timings)
-	s.addBetween(timings, used, since, at)
-	s.settle()
-	if s.requests.Count != 2 || len(s.errs) != 1 || s.errs[0].String() != "https://a/api 502" {
-		t.Fatalf("count %d, errors %v; want the late one and the api, its error", s.requests.Count, s.errs)
-	}
-	if got := fmt.Sprint(s.requests.Slowest); got != "[{GET https://a/late 200  130} { https://a/api 502  30}]" && got != "[{ https://a/late 200  130} { https://a/api 502  30}]" {
-		t.Errorf("slowest %s", got)
-	}
-
-	// Of another document, every request it timed before at is between.
-	s = newRequestSet()
-	s.addBetween(timings, make([]bool, len(timings)), pageMark{Origin: 500, Now: 900}, at)
-	s.settle()
-	if s.requests.Count != 2 {
-		t.Errorf("count %d, want the old one and the api", s.requests.Count)
-	}
-}
-
 // TestStop_WaitsForARequestInFlight stops a recorder with a request sent
 // and not ended: it waits for the request to end, and networkSettle at
 // most for one that does not.

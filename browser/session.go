@@ -59,27 +59,17 @@ type sessionCall struct {
 	pending    []pendingRequest
 	pendingOut []pendingRequest
 	used       bool
-	// mark is where on the page the step before stopped recording, and
-	// markOut where the step stops, for the next.
-	mark, markOut *pageMark
+	// stopped is when the step before stopped recording, and stoppedOut
+	// when the step does, for the next, in milliseconds of the Unix
+	// epoch, 0 when not known.
+	stopped, stoppedOut float64
 }
 
-// markFromState reads where on the page the step before stopped
-// recording, as the state of the job names it.
-func markFromState(state map[string]any) *pageMark {
-	v, ok := state["page_mark"]
-	if !ok || v == nil {
-		return nil
-	}
-	b, err := json.Marshal(v)
-	if err != nil {
-		return nil
-	}
-	var m pageMark
-	if json.Unmarshal(b, &m) != nil || m.Origin == 0 {
-		return nil
-	}
-	return &m
+// stoppedFromState reads when the step before stopped recording, as the
+// state of the job names it, 0 when it does not.
+func stoppedFromState(state map[string]any) float64 {
+	v, _ := state["network_stopped"].(float64)
+	return v
 }
 
 // pendingFromState reads the requests the state of the job names pending.
@@ -100,8 +90,8 @@ func pendingFromState(state map[string]any) []pendingRequest {
 }
 
 // stateWith returns the state of the job that names s, the requests
-// pending, and where on the page the step stopped recording, when known.
-func (s *session) stateWith(pending []pendingRequest, mark *pageMark) map[string]any {
+// pending, and when the step stopped recording, when known.
+func (s *session) stateWith(pending []pendingRequest, stopped float64) map[string]any {
 	state := s.state()
 	list := make([]any, len(pending))
 	for i, p := range pending {
@@ -111,8 +101,8 @@ func (s *session) stateWith(pending []pendingRequest, mark *pageMark) map[string
 		list[i] = m
 	}
 	state["pending"] = list
-	if mark != nil {
-		state["page_mark"] = map[string]any{"origin": mark.Origin, "now": mark.Now}
+	if stopped > 0 {
+		state["network_stopped"] = stopped
 	}
 	return state
 }
