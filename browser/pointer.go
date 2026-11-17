@@ -57,39 +57,55 @@ func (a *ChromeDPAction) checkPointer() error {
 			}
 		}
 	}
-	if a.Name != "wheel" && (a.Direction != "" || a.Amount != 0) {
+	if a.Name != "wheel" && a.givesAny("direction", "amount") {
 		return fmt.Errorf("%s does not take direction or amount: only wheel does", a.Name)
+	}
+	if a.Name != "press" && a.givesAny("repeat") {
+		return fmt.Errorf("%s does not take repeat: only press does", a.Name)
+	}
+	if slices.Contains(a.given, "amount") && a.Amount < 1 {
+		return fmt.Errorf("%s: the amount is %d, but it is a number of notches, 1 or more", a.Name, a.Amount)
+	}
+	if slices.Contains(a.given, "repeat") && a.Repeat < 1 {
+		return fmt.Errorf("%s: repeat is %d, but it is how many times to press, 1 or more", a.Name, a.Repeat)
 	}
 	return nil
 }
 
 // pointScript scrolls the element into view and gives the middle of it, as
-// the mouse goes to, or why it cannot.
-const pointScript = `((el) => {
+// the mouse goes to, or why it cannot. With keep, an element whose middle
+// is in the viewport is not scrolled, so that a wheel over it does not undo
+// what the wheel before scrolled.
+const pointScript = `((el, keep) => {
 	if (!el) {
 		return { error: "no element matched" };
 	}
+	const box = () => Array.from(el.getClientRects()).find((b) => b.width > 0 && b.height > 0);
+	const shown = (b) => b && b.left + b.width / 2 >= 0 && b.top + b.height / 2 >= 0 &&
+		b.left + b.width / 2 < innerWidth && b.top + b.height / 2 < innerHeight;
 	// The scroll is instant, whatever scroll-behavior the page sets, so
 	// that the box is measured where the element has come to.
-	el.scrollIntoView({ block: "center", inline: "center", behavior: "instant" });
+	if (!keep || !shown(box())) {
+		el.scrollIntoView({ block: "center", inline: "center", behavior: "instant" });
+	}
 	// The middle of the first box the element shows, as a link wrapped
 	// over two lines has a box on each, and the middle of the two would
 	// fall between them, on something else.
-	const r = Array.from(el.getClientRects()).find((b) => b.width > 0 && b.height > 0);
+	const r = box();
 	if (!r) {
 		return { error: "the element has no box to point at" };
 	}
 	return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
-})(%s)`
+})(%s, %t)`
 
 // pointOf returns an action that gives where the mouse acts on the target:
 // its point, or the middle of its element, once the element is visible,
-// scrolled into view.
-func pointOf(tg target) func(ctx context.Context, t *chromedp.Target) (point, error) {
+// scrolled into view; with keep, only when its middle is not in view.
+func pointOf(tg target, keep bool) func(ctx context.Context, t *chromedp.Target) (point, error) {
 	script := chromedp.Evaluate[struct {
 		X, Y  float64
 		Error string
-	}](fmt.Sprintf(pointScript, tg.first()))
+	}](fmt.Sprintf(pointScript, tg.first(), keep))
 	return func(ctx context.Context, t *chromedp.Target) (point, error) {
 		if tg.point != nil {
 			return *tg.point, nil
@@ -131,7 +147,7 @@ func mouseClick(tg target, button string, count int, modifiers []string) (chrome
 	if err != nil {
 		return nil, fmt.Errorf("click: %w", err)
 	}
-	at := pointOf(tg)
+	at := pointOf(tg, false)
 	return func(ctx context.Context, t *chromedp.Target) (chromedp.Void, error) {
 		p, err := at(ctx, t)
 		if err != nil {
@@ -149,7 +165,7 @@ func mouseClick(tg target, button string, count int, modifiers []string) (chrome
 
 // mouseMove returns an action that moves the mouse onto the target.
 func mouseMove(tg target) chromedp.Action[chromedp.Void] {
-	at := pointOf(tg)
+	at := pointOf(tg, false)
 	return func(ctx context.Context, t *chromedp.Target) (chromedp.Void, error) {
 		p, err := at(ctx, t)
 		if err != nil {
@@ -182,7 +198,7 @@ func wheel(tg target, direction string, amount int) (chromedp.Action[chromedp.Vo
 	default:
 		return nil, fmt.Errorf("wheel: the direction is %q, but it is up, down, left or right", direction)
 	}
-	at := pointOf(tg)
+	at := pointOf(tg, true)
 	return func(ctx context.Context, t *chromedp.Target) (chromedp.Void, error) {
 		p, err := at(ctx, t)
 		if err != nil {
@@ -237,7 +253,7 @@ func parseModifiers(names []string) ([]chromedp.Modifier, error) {
 
 // pointerFieldKeys are the fields of the mouse whose zero value a workflow
 // can mean, as x: 0, so that whether it wrote them is kept.
-var pointerFieldKeys = []string{"x", "y", "button", "count", "modifiers"}
+var pointerFieldKeys = []string{"x", "y", "button", "count", "modifiers", "direction", "amount", "repeat"}
 
 // markGivenPointerFields records which of the fields of the mouse each
 // action of data was written with.

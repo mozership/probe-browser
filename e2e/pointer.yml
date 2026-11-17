@@ -68,6 +68,22 @@ jobs:
       - name: wait_text
         selector: "#scrolled"
         equals: "scrolled: 200"
+      # The wheel over the field scrolls the page, and a second over it
+      # scrolls it on, rather than bringing the field back first.
+      - name: wheel
+        selector: "#field"
+        direction: down
+        amount: 1
+      - name: wait_text
+        selector: "#page-scrolled"
+        equals: "page scrolled: 100"
+      - name: wheel
+        selector: "#field"
+        direction: down
+        amount: 1
+      - name: wait_text
+        selector: "#page-scrolled"
+        equals: "page scrolled: 200"
     test: res.code == 0
 
   - name: A click with the mouse reaches an element below the fold of a page that scrolls smoothly, and a link wrapped over two lines

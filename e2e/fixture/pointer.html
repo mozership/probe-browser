@@ -10,7 +10,7 @@
     #scroller { height: 150px; width: 300px; overflow: auto; }
     #scroller div { height: 2000px; }
     html { scroll-behavior: smooth; }
-    #far { margin-top: 3000px; }
+    #far { display: block; margin-top: 3000px; }
   </style>
 </head>
 <body>
@@ -22,6 +22,7 @@
     <p id="hovered">none</p>
     <div id="scroller"><div>tall</div></div>
     <p id="scrolled">scrolled: 0</p>
+    <p id="page-scrolled">page scrolled: 0</p>
     <input id="field">
     <!-- A button below the fold of a page that scrolls smoothly, which a
          click with the mouse scrolls into view before it points at it. -->
@@ -51,6 +52,9 @@
     document.getElementById("wrapped").addEventListener("click", (e) => {
       e.preventDefault();
       document.getElementById("wrap-clicked").textContent = "wrapped link clicked";
+    });
+    addEventListener("scroll", () => {
+      document.getElementById("page-scrolled").textContent = "page scrolled: " + Math.round(scrollY);
     });
     const scroller = document.getElementById("scroller");
     scroller.addEventListener("scroll", () => {

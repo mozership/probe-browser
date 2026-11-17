@@ -24,6 +24,10 @@ func TestBuildActionTasks_PointerRefused(t *testing.T) {
 		{"a wheel with no point", map[string]any{"name": "wheel", "direction": "down"}, "wheel needs selector, has_text or ref, to find the element it acts on, or x and y"},
 		{"a direction on another action", map[string]any{"name": "click", "x": 1, "y": 2, "direction": "down"}, "click does not take direction or amount"},
 		{"repeat on another action", map[string]any{"name": "type", "value": "a", "repeat": 2}, "type does not take repeat"},
+		{"repeat of 0 on another action", map[string]any{"name": "type", "value": "a", "repeat": 0}, "type does not take repeat"},
+		{"an empty direction on another action", map[string]any{"name": "click", "x": 1, "y": 2, "direction": ""}, "click does not take direction or amount"},
+		{"an amount of 0", map[string]any{"name": "wheel", "x": 1, "y": 2, "direction": "up", "amount": 0}, "wheel: the amount is 0"},
+		{"a repeat of 0", map[string]any{"name": "press", "value": "Enter", "repeat": 0}, "press: repeat is 0"},
 		{"a key that is none", map[string]any{"name": "press", "value": "Control+a Nope"}, `"Nope" is not a key`},
 	}
 	for _, tc := range testCases {

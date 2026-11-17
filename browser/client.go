@@ -516,9 +516,6 @@ func (req *Req) buildActionTasks() ([]chromedp.Action[chromedp.Void], error) {
 		if err := action.checkPointer(); err != nil {
 			return nil, err
 		}
-		if action.Name != "press" && action.Repeat != 0 {
-			return nil, fmt.Errorf("%s does not take repeat: only press does", action.Name)
-		}
 		tg := action.target()
 		if err := action.checkTarget(); err != nil {
 			return nil, err
