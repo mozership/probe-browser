@@ -185,3 +185,20 @@ func TestStoppedFromState(t *testing.T) {
 		}
 	}
 }
+
+// TestReconcile_NotACarriedOneSentAfter takes the timing of a request sent
+// after the step before stopped, at 1060, for another than the one carried
+// from it, sent at 1000, which goes on, though they started close.
+func TestReconcile_NotACarriedOneSentAfter(t *testing.T) {
+	s := newRequestSet()
+	carried(s, "p", "GET", "https://a/poll", 1000).firstURL = "https://a/poll"
+	first := timings(0, resourceTiming{URL: "https://a/poll", Status: 500, Start: 1080, End: 1500})
+	s.reconcile(1060, 2000, 3000, first, timings(0))
+	s.settle()
+	if got := fmt.Sprint(s.errs); got != "[https://a/poll 500]" {
+		t.Errorf("errors %s, want the one sent after, of no method", got)
+	}
+	if p := s.pending(); len(p) != 1 || p[0].ID != "p" || p[0].FirstURL != "https://a/poll" {
+		t.Errorf("pending %+v, want the carried one, with the URL it was asked for", p)
+	}
+}

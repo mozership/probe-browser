@@ -169,7 +169,7 @@ func TestStop_APagePollingDoesNotKeepItWaiting(t *testing.T) {
 		}
 	})
 	start := time.Now()
-	r.stop(nil)
+	r.stop(nil, time.Time{})
 	if d := time.Since(start); d > networkDrain+200*time.Millisecond {
 		t.Errorf("stop took %s, want about %s at most", d, networkDrain)
 	}
@@ -242,7 +242,7 @@ func TestStop_WaitsForARequestInFlight(t *testing.T) {
 		r.mu.Unlock()
 	}()
 	start := time.Now()
-	r.stop(nil)
+	r.stop(nil, time.Time{})
 	if d := time.Since(start); d < 300*time.Millisecond || d > networkSettle {
 		t.Errorf("stop took %s, want it to wait for the request, which took 300ms", d)
 	}
@@ -251,7 +251,7 @@ func TestStop_WaitsForARequestInFlight(t *testing.T) {
 	defer cancel()
 	r = &networkRecorder{cancel: cancel, events: map[string][]jsonv2.Value{}, last: time.Now(), inflight: map[string]bool{"s": false}}
 	start = time.Now()
-	r.stop(nil)
+	r.stop(nil, time.Time{})
 	if d := time.Since(start); d < networkSettle || d > networkSettle+200*time.Millisecond {
 		t.Errorf("stop took %s, want %s, as the request never ends", d, networkSettle)
 	}
@@ -277,8 +277,21 @@ func TestStop_WaitsForARequestSentWhileQuiet(t *testing.T) {
 		r.mu.Unlock()
 	}()
 	start := time.Now()
-	r.stop(nil)
+	r.stop(nil, time.Time{})
 	if d := time.Since(start); d < 420*time.Millisecond || d > networkSettle {
 		t.Errorf("stop took %s, want it to wait for the request sent while quiet", d)
+	}
+}
+
+// TestStop_NotPastTheDeadline stops waiting for a request in flight at
+// the step's deadline.
+func TestStop_NotPastTheDeadline(t *testing.T) {
+	_, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	r := &networkRecorder{cancel: cancel, events: map[string][]jsonv2.Value{}, last: time.Now(), inflight: map[string]bool{"s": false}}
+	start := time.Now()
+	r.stop(nil, start.Add(300*time.Millisecond))
+	if d := time.Since(start); d > 500*time.Millisecond {
+		t.Errorf("stop took %s, want 300ms, the deadline", d)
 	}
 }

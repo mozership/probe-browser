@@ -961,11 +961,11 @@ func (req *Req) do() (*Result, error) {
 	}
 	if err != nil {
 		errs := console.stop(browserCtx, req.browserRunner.Run)
-		netErrs, _, _, _ := net.stop(timings)
+		netErrs, _, _, _ := net.stop(timings, deadline)
 		return nil, req.withEvidence(browserCtx, withNetworkErrors(withConsoleErrors(err, errs), netErrs))
 	}
 	consoleErrors := console.stop(browserCtx, req.browserRunner.Run)
-	networkErrors, requests, pending, stopped := net.stop(timings)
+	networkErrors, requests, pending, stopped := net.stop(timings, deadline)
 	if req.Session && req.session != nil {
 		req.session.used, req.session.pendingOut, req.session.stoppedOut = true, pending, stopped
 	}

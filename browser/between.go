@@ -53,13 +53,15 @@ func (p *pageTimings) wall(t float64) float64 {
 // page long open are read too.
 const timingBuffer = `performance.setResourceTimingBufferSize(10000)`
 
-// pageTimingsScript returns the pageTimings of now, the document first,
-// then the resources in the order they started.
+// pageTimingsScript returns the pageTimings of now, those that ended by
+// then, which the next step reads after, the document first, then the
+// resources in the order they started.
 const pageTimingsScript = `(() => { ` + timingBuffer + `;
+  const now = performance.now();
   const entries = performance.getEntriesByType('navigation').concat(performance.getEntriesByType('resource'))
-    .filter((e) => e.responseEnd > 0)
+    .filter((e) => e.responseEnd > 0 && e.responseEnd <= now)
     .map((e) => ({url: e.name, status: e.responseStatus || 0, start: e.startTime, end: e.responseEnd}));
-  return {origin: performance.timeOrigin, now: performance.now(), entries};
+  return {origin: performance.timeOrigin, now, entries};
 })()`
 
 // sentNear is how far apart when the browser says a request was sent and
@@ -101,6 +103,7 @@ func epochMS(t time.Time) float64 {
 // carried request that has not ended, and was sent before the document of
 // the page began, ended with the document before it, and is dropped.
 func (s *requestSet) reconcile(since, started, cancel float64, first, last *pageTimings) {
+	s.since = since
 	if first != nil && since > 0 {
 		for i, e := range first.Entries {
 			if end := first.wall(e.End); end <= since || end > started {
@@ -124,7 +127,11 @@ func (s *requestSet) reconcile(since, started, cancel float64, first, last *page
 		}
 		switch {
 		case q.wall > 0:
-			i := last.closest(q)
+			before := math.Inf(1)
+			if q.carried {
+				before = since
+			}
+			i := last.closest(q, before)
 			if i >= 0 {
 				last.used[i] = true
 			}
@@ -174,6 +181,10 @@ func (s *requestSet) sentAt(p *pageTimings, e resourceTiming) *netRequest {
 		if !q.carried || q.timed || q.notHTTP || q.wall == 0 || q.askedURL() != e.URL || (q.ended != 0 && q.gotResponse) {
 			continue
 		}
+		// One that started after the step before stopped is another.
+		if p.wall(e.Start) > s.since {
+			continue
+		}
 		if d := math.Abs(p.wall(e.Start) - q.wall); d <= sentNear && d < bestD {
 			best, bestD = q, d
 		}
@@ -182,11 +193,12 @@ func (s *requestSet) sentAt(p *pageTimings, e resourceTiming) *netRequest {
 }
 
 // closest returns the index of the timing not used of the URL q was asked
-// for that started nearest when q was sent, within sentNear, or -1.
-func (p *pageTimings) closest(q *netRequest) int {
+// for that started nearest when q was sent, within sentNear, and not after
+// before, or -1.
+func (p *pageTimings) closest(q *netRequest, before float64) int {
 	found, bestD := -1, math.Inf(1)
 	for i, e := range p.Entries {
-		if p.used[i] || e.URL != q.askedURL() {
+		if p.used[i] || e.URL != q.askedURL() || p.wall(e.Start) > before {
 			continue
 		}
 		if d := math.Abs(p.wall(e.Start) - q.wall); d <= sentNear && d < bestD {

@@ -265,6 +265,9 @@ type requestSet struct {
 	order    []network.RequestID
 	errs     []NetworkError
 	requests Requests
+	// since is when the step before stopped, before which a request
+	// carried from it was sent.
+	since float64
 }
 
 func (s *requestSet) of(id network.RequestID) *netRequest {
@@ -395,7 +398,8 @@ func slowest(list []SlowRequest, req SlowRequest) []SlowRequest {
 // the page that ended while it waited. It waits for the requests sent
 // while it recorded to end, networkSettle at most, as for a form the last
 // action sent, and then for no event to come for networkIdle,
-// networkDrain at most, as of a page that polls.
+// networkDrain at most, as of a page that polls, and not past deadline,
+// when the step is to end, unless it is zero.
 //
 // What ended between the steps of a kept browser, which no event tells
 // of, is taken from the page's own timings: first, as this step began,
@@ -403,7 +407,7 @@ func slowest(list []SlowRequest, req SlowRequest) []SlowRequest {
 // stopped, in milliseconds of the Unix epoch, for the next step.
 //
 // A nil recorder, as for a runner that reads no network, has none.
-func (r *networkRecorder) stop(timings func() *pageTimings) ([]NetworkError, Requests, []pendingRequest, float64) {
+func (r *networkRecorder) stop(timings func() *pageTimings, deadline time.Time) ([]NetworkError, Requests, []pendingRequest, float64) {
 	set := &requestSet{byID: map[network.RequestID]*netRequest{}, errs: []NetworkError{}, requests: Requests{Slowest: []SlowRequest{}}}
 	if r == nil {
 		return set.errs, set.requests, nil, 0
@@ -417,6 +421,9 @@ func (r *networkRecorder) stop(timings func() *pageTimings) ([]NetworkError, Req
 	// A request sent while it waits for the quiet, as one a timer of the
 	// last action sends, is waited for too, within networkSettle.
 	settle := time.Now().Add(networkSettle)
+	if !deadline.IsZero() && deadline.Before(settle) {
+		settle = deadline
+	}
 	var drain time.Time
 	for {
 		r.mu.Lock()
@@ -430,6 +437,9 @@ func (r *networkRecorder) stop(timings func() *pageTimings) ([]NetworkError, Req
 		}
 		if drain.IsZero() {
 			drain = now.Add(networkDrain)
+			if !deadline.IsZero() && deadline.Before(drain) {
+				drain = deadline
+			}
 		}
 		if quiet >= networkIdle || !now.Before(drain) {
 			break
@@ -469,7 +479,7 @@ func (s *requestSet) pending() []pendingRequest {
 		if q.gone || (q.sent == 0 && !(q.gotResponse && q.url != "")) || q.ended != 0 || q.notHTTP {
 			continue
 		}
-		out = append(out, pendingRequest{ID: string(id), Method: q.method, URL: q.url, Sent: q.sent, Status: q.status, Response: q.gotResponse, Wall: q.wall})
+		out = append(out, pendingRequest{ID: string(id), Method: q.method, URL: q.url, Sent: q.sent, Status: q.status, Response: q.gotResponse, Wall: q.wall, FirstURL: q.firstURL})
 	}
 	slices.SortStableFunc(out, func(a, b pendingRequest) int { return cmp.Compare(a.Sent, b.Sent) })
 	return out[max(0, len(out)-maxPending):]
