@@ -44,6 +44,7 @@ These go directly under `with`.
 | `headless` | Boolean | `true` | Run Chrome without a window |
 | `window_w` | Integer | `1920` | Window width in pixels |
 | `window_h` | Integer | `1080` | Window height in pixels |
+| `viewport_w`, `viewport_h` | Integer | none | The size of the viewport, the part of the window the page shows in, in CSS pixels, which the window's leaves smaller by what the browser shows around it: 1920 by 1080 of a window can be a viewport of 1920 by 937. Screenshots and points of `x` and `y` are of the viewport. They go together, and are set again on every step of a kept browser, which keeps them only for the step |
 | `evidence_dir` | String | the temporary directory | Where the page is saved when the actions fail. See [Page at failure](#page-at-failure) |
 | `storage_state` | String | none | A file `save_storage_state` wrote, whose cookies and localStorage the browser starts with. See [Carrying a login over](#carrying-a-login-over) |
 | `passkeys` | String | none | A file `save_passkeys` wrote, whose passkeys the virtual authenticator starts with. Without `virtual_authenticator`, it starts one of the defaults. See [Carrying a passkey over](#carrying-a-passkey-over) |
