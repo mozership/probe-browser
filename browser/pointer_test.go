@@ -1,8 +1,14 @@
 package browser
 
 import (
+	"context"
+	"fmt"
+	"net/url"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/chromedp/chromedp"
 )
 
 func TestBuildActionTasks_PointerRefused(t *testing.T) {
@@ -72,5 +78,37 @@ func TestBuildActionTasks_PointerTaken(t *testing.T) {
 	}
 	if tg := req.Actions[0].target(); tg.point == nil || tg.String() != "the point 0, 0" {
 		t.Errorf("the target is %s", tg)
+	}
+}
+
+// TestPointScript_KeepsAShownWrapperOfASlot measures, keeping it where it
+// is, a wrapper in a shadow root whose middle shows a node slotted into it.
+func TestPointScript_KeepsAShownWrapperOfASlot(t *testing.T) {
+	if testing.Short() {
+		t.Skip("starts Chrome")
+	}
+	opts := append(chromedp.DefaultExecAllocatorOptions[:], chromedp.NoSandbox, chromedp.Flag("headless", true))
+	allocCtx, allocCancel := chromedp.NewExecAllocator(context.Background(), opts...)
+	defer allocCancel()
+	ctx, cancel := chromedp.NewContext(allocCtx)
+	defer cancel()
+	if err := chromedp.Do(ctx); err != nil {
+		t.Skipf("no Chrome to start: %v", err)
+	}
+	ctx, tcancel := context.WithTimeout(ctx, 20*time.Second)
+	defer tcancel()
+	page := `<div style="height: 300px"></div><x-card><p style="margin: 0; height: 100px">Slotted</p></x-card><div style="height: 3000px"></div>
+<script>customElements.define('x-card', class extends HTMLElement {
+  constructor() { super(); this.attachShadow({mode: 'open'}).innerHTML = '<div id="wrap"><slot></slot></div>'; }
+});</script>`
+	if err := chromedp.Do(ctx, chromedp.Navigate("data:text/html,"+url.PathEscape(page))); err != nil {
+		t.Fatal(err)
+	}
+	wrap := `document.querySelector("x-card").shadowRoot.querySelector("#wrap")`
+	if _, err := chromedp.Run(ctx, chromedp.Evaluate[chromedp.Void](fmt.Sprintf(pointScript, wrap, true))); err != nil {
+		t.Fatal(err)
+	}
+	if y, err := chromedp.Run(ctx, chromedp.Evaluate[float64]("scrollY")); err != nil || y != 0 {
+		t.Errorf("the page scrolled to %g, %v; want the wrapper shown left where it is", y, err)
 	}
 }

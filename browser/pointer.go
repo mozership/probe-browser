@@ -95,8 +95,15 @@ const pointScript = `((el, keep) => {
 			return false;
 		}
 		const root = el.getRootNode();
-		const hit = (root.elementFromPoint ? root : document).elementFromPoint(x, y);
-		return Boolean(hit) && (hit === el || el.contains(hit));
+		// What is shown there is the element's when the element holds it in
+		// the flat tree, as a node slotted into a slot of a shadow root the
+		// element is in is.
+		for (let n = (root.elementFromPoint ? root : document).elementFromPoint(x, y); n; n = n.assignedSlot || n.parentNode || n.host) {
+			if (n === el) {
+				return true;
+			}
+		}
+		return false;
 	};
 	// The scroll is instant, whatever scroll-behavior the page sets, so
 	// that the box is measured where the element has come to.
