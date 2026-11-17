@@ -59,6 +59,27 @@ type sessionCall struct {
 	pending    []pendingRequest
 	pendingOut []pendingRequest
 	used       bool
+	// mark is where on the page the step before stopped recording, and
+	// markOut where the step stops, for the next.
+	mark, markOut *pageMark
+}
+
+// markFromState reads where on the page the step before stopped
+// recording, as the state of the job names it.
+func markFromState(state map[string]any) *pageMark {
+	v, ok := state["page_mark"]
+	if !ok || v == nil {
+		return nil
+	}
+	b, err := json.Marshal(v)
+	if err != nil {
+		return nil
+	}
+	var m pageMark
+	if json.Unmarshal(b, &m) != nil || m.Origin == 0 {
+		return nil
+	}
+	return &m
 }
 
 // pendingFromState reads the requests the state of the job names pending.
@@ -78,9 +99,9 @@ func pendingFromState(state map[string]any) []pendingRequest {
 	return out
 }
 
-// stateWith returns the state of the job that names s, and the requests
-// pending.
-func (s *session) stateWith(pending []pendingRequest) map[string]any {
+// stateWith returns the state of the job that names s, the requests
+// pending, and where on the page the step stopped recording, when known.
+func (s *session) stateWith(pending []pendingRequest, mark *pageMark) map[string]any {
 	state := s.state()
 	list := make([]any, len(pending))
 	for i, p := range pending {
@@ -90,6 +111,9 @@ func (s *session) stateWith(pending []pendingRequest) map[string]any {
 		list[i] = m
 	}
 	state["pending"] = list
+	if mark != nil {
+		state["page_mark"] = map[string]any{"origin": mark.Origin, "now": mark.Now}
+	}
 	return state
 }
 

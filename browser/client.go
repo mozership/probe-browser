@@ -917,11 +917,19 @@ func (req *Req) do() (*Result, error) {
 	// starts among the tasks, once the browser is set up.
 	if _, ok := req.browserRunner.(*ChromeDPRunner); ok {
 		var pending []pendingRequest
+		var since *pageMark
 		if req.attaches() {
-			pending = req.session.pending
+			pending, since = req.session.pending, req.session.mark
 		}
 		start := func(ctx context.Context, t *chromedp.Target) (chromedp.Void, error) {
-			net = recordNetwork(browserCtx, pending)
+			net = recordNetwork(browserCtx, pending, since)
+			// Where on the page the recording began, from which what ended
+			// between the steps is told from what this step sees.
+			if net != nil && req.Session {
+				if at, err := chromedp.Evaluate[pageMark](pageMarkScript)(ctx, t); err == nil {
+					net.at = &at
+				}
+			}
 			return chromedp.Void{}, nil
 		}
 		tasks = slices.Insert(tasks, min(req.recordFrom, len(tasks)), chromedp.Action[chromedp.Void](start))
@@ -938,13 +946,30 @@ func (req *Req) do() (*Result, error) {
 	}
 	if err != nil {
 		errs := console.stop(browserCtx, req.browserRunner.Run)
-		netErrs, _, _ := net.stop()
+		netErrs, _, _, _ := net.stop(nil)
 		return nil, req.withEvidence(browserCtx, withNetworkErrors(withConsoleErrors(err, errs), netErrs))
 	}
 	consoleErrors := console.stop(browserCtx, req.browserRunner.Run)
-	networkErrors, requests, pending := net.stop()
+	// The page's timings are read of a kept browser, whose steps leave
+	// what ends between them.
+	var timings func() *pageTimings
+	if req.Session {
+		timings = func() *pageTimings {
+			var got *pageTimings
+			read := chromedp.Evaluate[pageTimings](pageTimingsScript)
+			_ = req.browserRunner.Run(browserCtx, func(ctx context.Context, t *chromedp.Target) (chromedp.Void, error) {
+				v, err := read(ctx, t)
+				if err == nil {
+					got = &v
+				}
+				return chromedp.Void{}, err
+			})
+			return got
+		}
+	}
+	networkErrors, requests, pending, mark := net.stop(timings)
 	if req.Session && req.session != nil {
-		req.session.used, req.session.pendingOut = true, pending
+		req.session.used, req.session.pendingOut, req.session.markOut = true, pending, mark
 	}
 
 	results, filePaths, err := req.collectResults()

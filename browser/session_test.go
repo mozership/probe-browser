@@ -495,3 +495,73 @@ func TestRunStep_GoesOnWithARequestPending(t *testing.T) {
 		t.Errorf("pending %+v after it ended", p)
 	}
 }
+
+// TestRunStep_ARequestAnsweredBetweenTheSteps submits a form in one step
+// of a kept browser, which the server answers with a 500 between the
+// steps, where no step sees it: of one the step sent and waited
+// networkSettle for, and of one the page sent by a timer once the step
+// had ended. The next step takes it from the page's timing, as a network
+// error.
+func TestRunStep_ARequestAnsweredBetweenTheSteps(t *testing.T) {
+	if testing.Short() {
+		t.Skip("starts Chrome")
+	}
+	t.Setenv(CacheDirEnv, t.TempDir())
+	for name, tc := range map[string]struct {
+		delay  time.Duration
+		submit string
+	}{
+		"answered late":   {networkSettle + 500*time.Millisecond, `this.form.submit()`},
+		"sent by a timer": {0, `setTimeout(() => this.form.submit(), 300)`},
+	} {
+		t.Run(name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == http.MethodPost {
+					time.Sleep(tc.delay)
+					http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+					return
+				}
+				fmt.Fprintf(w, `<!doctype html><title>t</title><link rel="icon" href="data:,">
+<form method="post" action="/signup"><button id="go" type="button" onclick="%s">Sign up</button></form>`, tc.submit)
+			}))
+			defer srv.Close()
+
+			a := &Action{log: hclog.NewNullLogger()}
+			run := "run-between-" + strconv.Itoa(os.Getpid()) + "-" + strconv.Itoa(int(tc.delay))
+			t.Cleanup(func() { _ = cleanupSessions(run) })
+			var state map[string]any
+			step := func(actions ...any) map[string]any {
+				t.Helper()
+				ret, next, err := a.RunStep(actionrpc.Call{
+					With:      map[string]any{"session": true, "headless": true, "timeout": "30s", "evidence_dir": t.TempDir(), "actions": actions},
+					State:     state,
+					Step:      actionrpc.Step{RunID: run},
+					Cleanups:  &actionrpc.Cleanups{},
+					Processes: &actionrpc.Processes{},
+				})
+				if err != nil {
+					if strings.Contains(err.Error(), "executable file not found") {
+						t.Skipf("no Chrome to start: %v", err)
+					}
+					t.Fatal(err)
+				}
+				if next != nil {
+					state = next
+				}
+				return ret["res"].(map[string]any)
+			}
+			first := step(map[string]any{"name": "navigate", "url": srv.URL}, map[string]any{"name": "click", "selector": "#go"})
+			if errs := fmt.Sprint(first["network_errors"]); strings.Contains(errs, "/signup") {
+				t.Fatalf("network errors %s of the first step, want the sign-up answered after it", errs)
+			}
+			time.Sleep(time.Second)
+			res := step(map[string]any{"name": "wait_text", "selector": "body", "contains": "Internal Server Error"})
+			if errs := fmt.Sprint(res["network_errors"]); !strings.Contains(errs, "/signup") || !strings.Contains(errs, "500") {
+				t.Errorf("network errors %s, want the sign-up's 500", errs)
+			}
+			if p := pendingFromState(state); len(p) != 0 {
+				t.Errorf("pending %+v after it ended", p)
+			}
+		})
+	}
+}
