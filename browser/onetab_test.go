@@ -8,10 +8,9 @@ import (
 	"github.com/chromedp/chromedp"
 )
 
-// TestOneTabOff_TurnsOffTheFramesToo installs the script of one_tab in a
-// page and in a frame of its origin, as a registration for new documents
-// does, and turns it off in both.
-func TestOneTabOff_TurnsOffTheFramesToo(t *testing.T) {
+// TestOneTab_TheFramesToo turns the script of one_tab on in a page and in a
+// frame of its origin already loaded, and off in both.
+func TestOneTab_TheFramesToo(t *testing.T) {
 	if testing.Short() {
 		t.Skip("starts Chrome")
 	}
@@ -28,9 +27,9 @@ func TestOneTabOff_TurnsOffTheFramesToo(t *testing.T) {
 	if err := chromedp.Do(ctx, chromedp.Navigate(`data:text/html,<iframe srcdoc="<p>frame</p>"></iframe>`)); err != nil {
 		t.Fatal(err)
 	}
-	install := "(" + jsString(oneTabScript) + ", eval(" + jsString(oneTabScript) + "), frames[0].eval(" + jsString(oneTabScript) + "))"
 	read := "[window.__probeOneTab.on, frames[0].__probeOneTab.on]"
-	if err := chromedp.Do(ctx, chromedp.WaitReady("iframe"), chromedp.Evaluate[chromedp.Void](install)); err != nil {
+	// oneTabOn reaches the frame loaded before it, as of a kept browser.
+	if err := chromedp.Do(ctx, chromedp.WaitReady("iframe"), chromedp.Evaluate[chromedp.Void](oneTabOn)); err != nil {
 		t.Fatal(err)
 	}
 	on, err := chromedp.Run(ctx, chromedp.Evaluate[[2]bool](read))

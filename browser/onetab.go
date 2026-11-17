@@ -75,7 +75,7 @@ const oneTabOff = `(() => {
 
 // oneTab returns an action that keeps the step in one tab: the script runs
 // in every document the tab opens from now on, until done is called, and
-// in the one it shows. id is where the registration is kept for done.
+// in the one it shows, its frames of its origin included. id is where the registration is kept for done.
 func oneTab(id *page.ScriptIdentifier) chromedp.Action[chromedp.Void] {
 	return func(ctx context.Context, t *chromedp.Target) (chromedp.Void, error) {
 		res, err := chromedp.Call(ctx, page.AddScriptToEvaluateOnNewDocument, page.AddScriptToEvaluateOnNewDocumentParams{Source: oneTabScript})
@@ -83,9 +83,26 @@ func oneTab(id *page.ScriptIdentifier) chromedp.Action[chromedp.Void] {
 			return chromedp.Void{}, err
 		}
 		*id = res.Identifier
-		return chromedp.Evaluate[chromedp.Void](oneTabScript)(ctx, t)
+		return chromedp.Evaluate[chromedp.Void](oneTabOn)(ctx, t)
 	}
 }
+
+// oneTabOn runs oneTabScript in the document and in the frames of it a
+// script of the page can reach, those of its origin, as in a kept browser
+// they were loaded before the step.
+var oneTabOn = `(() => {
+	const on = (w) => {
+		try {
+			w.eval(` + jsString(oneTabScript) + `);
+			for (let i = 0; i < w.frames.length; i++) {
+				on(w.frames[i]);
+			}
+		} catch (e) {
+			// A frame of another origin is out of reach.
+		}
+	};
+	on(window);
+})()`
 
 // oneTabDone returns an action that stops the script of id from running in
 // the documents the tab opens after the step, and turns it off in the one
