@@ -68,7 +68,7 @@ const reviewFormsPage = `<!doctype html><title>t</title><body style="margin:0">
 <div id="ed" contenteditable="true">t</div><p id="edchanged">no</p>
 <x-field></x-field><p id="composed">no</p>
 <div style="opacity:0"><button id="hidden-twin">Twin</button></div><button id="twin">Twin</button>
-<div style="opacity:0"><div role="alert">Hidden alert</div></div><div role="alert">Shown alert</div>
+<div style="opacity:0"><div role="alert">Hidden alert</div></div><div role="alert">Shown alert</div><div role="alert status">Second alert</div>
 <x-btn style="position:absolute;left:0;top:400px"></x-btn>
 <script>
 document.getElementById("ed").addEventListener("change", () => { document.getElementById("edchanged").textContent = "yes"; });
@@ -133,7 +133,7 @@ func TestForms_WhatIsEasyToGetWrong(t *testing.T) {
 		// A point over a button of a shadow root is that button.
 		"shadow": `{"role":"button","name":"Shadow button"}`,
 		// An alert hidden by what holds it is not read.
-		"alerts": "Shown alert",
+		"alerts": "Shown alert\nSecond alert",
 	} {
 		if res[k] != want {
 			t.Errorf("%s: %q, want %q", k, res[k], want)

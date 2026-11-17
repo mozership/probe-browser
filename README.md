@@ -444,7 +444,7 @@ A ref names its element only in its document, so a test that is to act on the sa
             of: 2
 ```
 
-`role` and `name` are as `read_page` shows them; `nth`, from 0, and `of` tell the element among those of the role and the name, and are left out of a `locator` when it is the only one. A page that shows another number of them than `of` fails `locate` at once, with how many it has, as waiting does not tell them apart; one that shows none fails it once `timeout` runs out.
+`role` and `name` are as `locator` gives them: `read_page` shows the same role, and the name cut at 100 characters, where a locator keeps 200, so take a long name from `locator`. `nth`, from 0, and `of` tell the element among those of the role and the name, and are left out of a `locator` when it is the only one. A page that shows another number of them than `of` fails `locate` at once, with how many it has, as waiting does not tell them apart; one that shows none fails it once `timeout` runs out.
 
 ### Carrying a login over
 

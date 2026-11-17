@@ -680,7 +680,8 @@
   const alerts = () => {
     const out = [];
     each(document, (el) => {
-      if (!el.matches('[role=alert], [role=alertdialog]')) return;
+      // The role is the first of those role names, as of role="alert status".
+      if (!['alert', 'alertdialog'].includes(roleOf(el))) return;
       const t = squash(textOf(el));
       if (t && shown(el) && !hidesWhatItHolds(el) && !hiddenAbove(el)) out.push(clip(t, 300));
     });
