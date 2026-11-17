@@ -187,6 +187,8 @@ type ChromeDPAction struct {
 	Width  float64 `map:"width"`
 	Height float64 `map:"height"`
 	Scale  float64 `map:"scale"`
+	// Locator is the element locate finds, as locator described it.
+	Locator Locator `map:"locator"`
 	// given names which of the text fields the workflow wrote,
 	// since an empty string is otherwise the same as one left out.
 	given      []string
@@ -528,6 +530,9 @@ func (req *Req) buildActionTasks() ([]chromedp.Action[chromedp.Void], error) {
 		if _, err := action.regionOf(); err != nil {
 			return nil, err
 		}
+		if err := action.checkLocate(); err != nil {
+			return nil, err
+		}
 		tg := action.target()
 		if err := action.checkTarget(); err != nil {
 			return nil, err
@@ -556,6 +561,22 @@ func (req *Req) buildActionTasks() ([]chromedp.Action[chromedp.Void], error) {
 		case "title":
 			var text string
 			tasks = append(tasks, store(chromedp.Title(), &text))
+			action.reText = &text
+		case "form_input":
+			var text string
+			tasks = append(tasks, formInput(tg, action.Value, &text))
+			action.reText = &text
+		case "locator":
+			var text string
+			tasks = append(tasks, describe(tg, &text))
+			action.reText = &text
+		case "locate":
+			var text string
+			tasks = append(tasks, locate(action.Locator, &text))
+			action.reText = &text
+		case "alerts":
+			var text string
+			tasks = append(tasks, alerts(&text))
 			action.reText = &text
 		case "read_page":
 			if err := outline.CheckFilter(action.Filter); err != nil {
@@ -761,7 +782,7 @@ func (req *Req) collectResults() (map[string]string, map[string]string, error) {
 
 	for _, action := range req.Actions {
 		switch action.Name {
-		case "text", "value", "get_attribute", "wait_text", "get_html", "wait_passkey", "get_cookie", "read_page", "page_text", "url", "title":
+		case "text", "value", "get_attribute", "wait_text", "get_html", "wait_passkey", "get_cookie", "read_page", "page_text", "url", "title", "form_input", "locator", "locate", "alerts":
 			key := action.Name
 			if action.ID != "" {
 				key = action.ID

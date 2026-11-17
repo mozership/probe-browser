@@ -18,7 +18,7 @@ const wheelNotch = 100
 // pointActions are the actions that take a point of the viewport, x and y,
 // in place of an element, and act there with the mouse.
 var pointActions = map[string]bool{
-	"click": true, "double_click": true, "right_click": true, "hover": true, "wheel": true,
+	"click": true, "double_click": true, "right_click": true, "hover": true, "wheel": true, "locator": true,
 }
 
 // mouseFields are the fields of how click presses the mouse button.
@@ -44,7 +44,7 @@ func (a *ChromeDPAction) checkPointer() error {
 	switch {
 	case region:
 	case (x || y) && !pointActions[a.Name]:
-		return fmt.Errorf("%s does not take x or y: click, double_click, right_click, hover and wheel do", a.Name)
+		return fmt.Errorf("%s does not take x or y: click, double_click, right_click, hover, wheel and locator do", a.Name)
 	case x != y:
 		return fmt.Errorf("%s takes x and y together, the point of the viewport it acts at", a.Name)
 	case (x || y) && (a.Selector != "" || a.HasText != "" || a.Ref != ""):
@@ -281,7 +281,7 @@ func parseModifiers(names []string) ([]chromedp.Modifier, error) {
 
 // pointerFieldKeys are the fields of the mouse whose zero value a workflow
 // can mean, as x: 0, so that whether it wrote them is kept.
-var pointerFieldKeys = []string{"x", "y", "button", "count", "modifiers", "direction", "amount", "repeat", "width", "height", "scale"}
+var pointerFieldKeys = []string{"x", "y", "button", "count", "modifiers", "direction", "amount", "repeat", "width", "height", "scale", "locator"}
 
 // markGivenPointerFields records which of the fields of the mouse each
 // action of data was written with.

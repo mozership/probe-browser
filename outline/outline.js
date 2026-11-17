@@ -502,37 +502,62 @@
 
   // formInput sets the value of a form field as a user's input does, firing
   // input and change, and says what it did.
-  const formInput = (ref, value) => {
-    const el = byRef(ref);
+  const formInput = (ref, value) => fill(byRef(ref), value, ref);
+
+  // fill sets the value of the form field el as formInput does, naming it
+  // as name in what it says.
+  const fill = (el, value, name = 'the element') => {
+    const ref = name;
+    // input is composed and change is not, as those of a user's edit are,
+    // so that the input of a field in a shadow root reaches the page.
     const fire = () => {
-      el.dispatchEvent(new Event('input', { bubbles: true }));
+      el.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
       el.dispatchEvent(new Event('change', { bubbles: true }));
     };
-    if (el.disabled) throw new Error(ref + ' is disabled');
+    if (el.matches(':disabled')) throw new Error(ref + ' is disabled');
     if (el.tagName === 'SELECT') {
       const want = String(value);
       const opts = Array.from(el.options);
       const opt = opts.find((o) => o.value === want) || opts.find((o) => squash(o.label) === squash(want));
       if (!opt) throw new Error('no option ' + quote(want) + ' in ' + ref + '; the options are ' + quote(opts.map((o) => o.label)));
-      if (opt.disabled) throw new Error('the option ' + quote(opt.label) + ' is disabled');
-      if (el.multiple) opt.selected = true; else el.value = opt.value;
+      // :disabled is also that of an option of a disabled optgroup.
+      if (opt.matches(':disabled')) throw new Error('the option ' + quote(opt.label) + ' is disabled');
+      // The option itself is chosen, as another of its value can come
+      // first.
+      opt.selected = true;
       fire();
       return 'Selected ' + quote(opt.label) + ' in ' + ref + '.';
     }
     if (el.type === 'checkbox' || el.type === 'radio') {
       const want = value === true || value === 'true' || value === 'on' || value === 1 || value === '1';
-      if (el.checked !== want) el.click();
+      if (el.checked !== want) {
+        if (want || el.type === 'checkbox') {
+          el.click();
+        } else {
+          // A click leaves a radio checked, so it is unchecked as such,
+          // through the setter of the prototype, as React tracks what the
+          // instance's own property was last given.
+          Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'checked').set.call(el, false);
+          fire();
+        }
+      }
+      if (el.checked !== want) throw new Error(ref + ' stayed ' + (el.checked ? 'checked' : 'unchecked'));
       return (el.checked ? 'Checked ' : 'Unchecked ') + ref + '.';
     }
     if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') {
       const proto = el.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
       Object.getOwnPropertyDescriptor(proto, 'value').set.call(el, String(value));
+      // A value the field does not take, as 2000-13-01 of a date, leaves it
+      // empty, or one out of range of a range clamped, rather than failing.
+      if (el.value !== String(value)) {
+        throw new Error(ref + ' did not take the value, and holds ' + quote(el.value));
+      }
       fire();
       return 'Set the value of ' + ref + '.';
     }
     if (el.isContentEditable) {
       el.textContent = String(value);
-      el.dispatchEvent(new Event('input', { bubbles: true }));
+      fire();
       return 'Set the text of ' + ref + '.';
     }
     throw new Error(ref + ' is not a form field');
@@ -600,7 +625,8 @@
   const withRoleAndName = (role, name) => {
     const out = [];
     each(document, (el) => {
-      if (roleOf(el) === role && clip(nameOf(el, role), 200) === name && shown(el)) out.push(el);
+      if (roleOf(el) === role && clip(nameOf(el, role), 200) === name && shown(el) &&
+        !hidesWhatItHolds(el) && !hiddenAbove(el)) out.push(el);
     });
     return out;
   };
@@ -614,6 +640,9 @@
     if (!role) return null;
     const name = clip(nameOf(el, role), 200);
     const twins = withRoleAndName(role, name);
+    // An element hidden from the page is none of them, and describing it
+    // would name another, which a replay would act on.
+    if (!twins.includes(el)) return null;
     if (twins.length <= 1) return { role, name };
     if (!name) return null;
     return { role, name, nth: Math.max(twins.indexOf(el), 0), of: twins.length };
@@ -624,8 +653,16 @@
   // point with nothing to act on, and for an element it cannot describe.
   const locator = (ref, x, y) => {
     if (ref) return locatorOf(byRef(ref));
+    // The point is looked up through the open shadow roots, whose host the
+    // document gives in place of what is in them, and the element is the
+    // nearest one can act on above it in the flat tree.
     let el = document.elementFromPoint(x, y);
-    while (el && !interactive(el, roleOf(el))) el = el.parentElement;
+    while (el && el.shadowRoot) {
+      const inner = el.shadowRoot.elementFromPoint(x, y);
+      if (!inner || inner === el) break;
+      el = inner;
+    }
+    while (el && !interactive(el, roleOf(el))) el = parentOf(el);
     return el ? locatorOf(el) : null;
   };
 
@@ -645,9 +682,10 @@
   const alerts = () => {
     const out = [];
     each(document, (el) => {
-      if (!el.matches('[role=alert], [role=alertdialog]')) return;
+      // The role is the first of those role names, as of role="alert status".
+      if (!['alert', 'alertdialog'].includes(roleOf(el))) return;
       const t = squash(textOf(el));
-      if (t && shown(el)) out.push(clip(t, 300));
+      if (t && shown(el) && !hidesWhatItHolds(el) && !hiddenAbove(el)) out.push(clip(t, 300));
     });
     return out;
   };
@@ -657,6 +695,6 @@
     return f(...args);
   };
   window.__probeOutline = Object.fromEntries(Object.entries({
-    read, point, scrollTo, focus, formInput, text, locator, locate, alerts, element: byRef,
+    read, point, scrollTo, focus, formInput, fill, text, locator, locatorOf, locate, alerts, element: byRef,
   }).map(([name, f]) => [name, fresh(f)]));
 })();
