@@ -260,8 +260,12 @@ type wheelParams struct {
 var dispatchWheel = cdp.Command[wheelParams, cdp.Empty]{Method: input.CommandDispatchMouseEvent}
 
 // nextFrame waits for the page to draw two frames, so that what came
-// before is laid out and drawn.
-var nextFrame = chromedp.Evaluate[chromedp.Void](`new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))`, chromedp.EvalAwaitPromise)
+// before is laid out and drawn, or 100 ms, as a tab that is hidden draws
+// none.
+var nextFrame = chromedp.Evaluate[chromedp.Void](`new Promise((resolve) => {
+	setTimeout(resolve, 100);
+	requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+})`, chromedp.EvalAwaitPromise)
 
 // modifierAliases are other names of the modifiers, as a person or a model
 // writes them, beside those of KeyboardEvent.
