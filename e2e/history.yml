@@ -1,0 +1,85 @@
+name: Browser History
+description: |
+  Goes back and forward in the history of the tab, between pages and in
+  one page, reloads the page, and reads where the tab is with url and
+  title.
+  Serve the fixture page first, as e2e/workflow.yml does:
+  go run ./e2e/server
+actions:
+  browser: ./action
+vars:
+  url: "{{ URL ?? 'http://localhost:8090' }}"
+jobs:
+- name: History
+  steps:
+  - name: Go back and forward between two pages, and reload
+    uses: browser
+    with:
+      headless: true
+      timeout: 30s
+      actions:
+      - name: navigate
+        url: "{{vars.url}}/"
+      - name: navigate
+        url: "{{vars.url}}/input.html"
+      - name: title
+        id: second
+      - name: back
+      - name: url
+        id: back_url
+      - name: title
+        id: back_title
+      - name: forward
+      - name: url
+        id: forward_url
+      # The field holds what was typed until the page is loaded again.
+      - name: set_value
+        selector: "#q"
+        value: typed
+      - name: reload
+      - name: value
+        id: reloaded
+        selector: "#q"
+    test: |
+      res.code == 0 &&
+      res.results.second == "Probe Browser Input Fixture" &&
+      res.results.back_url == vars.url + "/" &&
+      res.results.back_title == "Probe Browser Fixture" &&
+      res.results.forward_url == vars.url + "/input.html" &&
+      res.results.reloaded == "old"
+
+- name: History in one document
+  steps:
+  - name: Go back and forward over a fragment and a pushed state, which load no page
+    uses: browser
+    with:
+      headless: true
+      timeout: 30s
+      actions:
+      - name: navigate
+        url: "{{vars.url}}/history.html"
+      - name: click
+        selector: "#part-link"
+      - name: url
+        id: part
+      - name: back
+      - name: url
+        id: before_part
+      - name: click
+        selector: "#push"
+      - name: back
+      - name: url
+        id: before_push
+      - name: forward
+      - name: url
+        id: pushed
+      - name: text
+        id: loads
+        selector: "#loads"
+    test: |
+      res.code == 0 &&
+      res.results.part == vars.url + "/history.html#part" &&
+      res.results.before_part == vars.url + "/history.html" &&
+      res.results.before_push == vars.url + "/history.html" &&
+      res.results.pushed == vars.url + "/history.html?step=2" &&
+      res.results.loads == "loads: 1"

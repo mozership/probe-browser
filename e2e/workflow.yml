@@ -120,6 +120,31 @@ jobs:
       res.stdout matches 'ref (ref_[a-z]{4}1): ref_[a-z]{4}1 is not on the page any more; read the page again' &&
       int(res.stdout | split("took=") | last() | trim()) < 15
 
+  - name: history.yml
+    uses: shell
+    with:
+      cmd: probe e2e/history.yml
+      timeout: 2m
+      env:
+        DISPLAY: ":99"
+    test: res.code == 0
+    echo: "{{res.stdout}}"
+
+  - name: Going back with no page to go back to fails at once
+    uses: shell
+    with:
+      cmd: |
+        dir=$(mktemp -d)
+        EVIDENCE_DIR="$dir" probe e2e/history-failure.yml
+        echo "exit=$?"
+        rm -rf "$dir"
+      timeout: 1m
+      env:
+        DISPLAY: ":99"
+    test: |
+      res.stdout contains "exit=3" &&
+      res.stdout contains "back: the tab has no page to go back to"
+
   - name: passkey.yml
     uses: shell
     with:

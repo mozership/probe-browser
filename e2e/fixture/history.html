@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Probe Browser History Fixture</title>
+</head>
+<body>
+  <h1>History</h1>
+  <!-- Entries of the history in one document: a fragment, and a state a
+       single-page application pushes, which load no page. -->
+  <a id="part-link" href="#part">To the part</a>
+  <button id="push" type="button">Push a state</button>
+  <p id="loads">none</p>
+  <p id="part">The part</p>
+  <script>
+    // How many times the document was loaded in this tab, so that a test
+    // tells a page loaded anew from one kept.
+    const loads = Number(sessionStorage.getItem("loads") || 0) + 1;
+    sessionStorage.setItem("loads", String(loads));
+    document.getElementById("loads").textContent = "loads: " + loads;
+    document.getElementById("push").addEventListener("click", () => {
+      history.pushState({}, "", "?step=2");
+    });
+  </script>
+</body>
+</html>

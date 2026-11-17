@@ -121,10 +121,15 @@ These open a page or hold the step until the page is in the state the next actio
 | Action | What it does |
 |--------|--------------|
 | `navigate` | Opens `url` and waits for the page to load. A network error the browser reports, such as `net::ERR_CONNECTION_REFUSED`, fails it at once; an address that never answers keeps it waiting until `timeout` |
+| `back` | Goes back to the page before in the history of the tab, and waits for it to load. A tab with no page before fails it at once; the blank page the browser starts on is none |
+| `forward` | Goes forward to the page after in the history of the tab, and waits for it to load. A tab with no page after fails it at once |
+| `reload` | Loads the page again, and waits for it to load |
 | `wait_visible` | Waits until `selector` is visible |
 | `wait_not_visible` | Waits until no element that matches `selector` is visible. An element taken out of the page counts as not visible, as one a conditional render removes, and so does one that was never there: after an action that brings the element, wait for it with `wait_visible` first |
 | `wait_enabled` | Waits until `selector` is visible and enabled |
 | `wait_ready` | Waits until the page's `body` is ready. `selector` is ignored |
+
+Chrome runs with its back-forward cache off, so that `back` and `forward` to another document load it anew: chromedp does not follow a page the cache restores, and an action on an element of it would wait out its timeout. A page that goes back so loads as a page opened anew does, and runs its scripts again. An entry of the same document, as a fragment such as `#part` or a state a single-page application pushes with `history.pushState`, is not loaded anew: the page stays as it is, as it does for a user.
 
 ### Reading the page
 
@@ -137,6 +142,8 @@ These put a string in `res.results`, under `id` or the action's name.
 | `value` | The value of a form field, such as an `input` |
 | `get_attribute` | The first attribute in `attribute` of `selector`, or an empty string when the element does not have it |
 | `get_html` | The outer HTML of `selector`, once it is visible |
+| `url` | The URL of the page open |
+| `title` | The title of the page open |
 | `read_page` | The page as an outline, a line for each element with its role, its name and a ref. See [Reading the page as an outline](#reading-the-page-as-an-outline) |
 | `page_text` | The text the page shows, its main content first, the text of the open shadow roots included |
 | `get_cookie` | The value of the cookie `cookie_name` the browser sends to the page open, HttpOnly ones included. It waits until the page has the cookie, as one set a moment after a sign-in. When `timeout` runs out first, the step fails with the names of the cookies the page has, but not their values. Of two with the name, it gives the one of the longer path, which the browser sends first; two of one path, which differ in their domains, fail the step, as which the browser sends first cannot be told |

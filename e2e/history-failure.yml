@@ -1,0 +1,26 @@
+name: Browser History Failure
+description: |
+  Goes back in a tab that has opened one page, which fails at once, as the
+  blank page the browser started on is no page to go back to.
+  e2e/workflow.yml runs it and checks what it says.
+  Serve the fixture page first, as e2e/workflow.yml does:
+  go run ./e2e/server
+actions:
+  browser: ./action
+vars:
+  url: "{{ URL ?? 'http://localhost:8090' }}"
+  evidence_dir: "{{ EVIDENCE_DIR ?? '/tmp/probe-browser-evidence' }}"
+jobs:
+- name: No page to go back to
+  steps:
+  - name: Go back in a tab that has opened one page
+    uses: browser
+    with:
+      headless: true
+      timeout: 30s
+      evidence_dir: "{{vars.evidence_dir}}"
+      actions:
+      - name: navigate
+        url: "{{vars.url}}/"
+      - name: back
+    test: res.code == 0
