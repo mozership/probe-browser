@@ -70,7 +70,7 @@ jobs:
         equals: "scrolled: 200"
     test: res.code == 0
 
-  - name: A click with the mouse reaches an element below the fold of a page that scrolls smoothly
+  - name: A click with the mouse reaches an element below the fold of a page that scrolls smoothly, and a link wrapped over two lines
     uses: browser
     with:
       headless: true
@@ -84,7 +84,16 @@ jobs:
       - name: text
         id: far
         selector: "#far-clicked"
-    test: res.code == 0 && res.results.far == "far clicked, shift=true"
+      - name: click
+        selector: "#wrapped"
+        count: 1
+      - name: text
+        id: wrapped
+        selector: "#wrap-clicked"
+    test: |
+      res.code == 0 &&
+      res.results.far == "far clicked, shift=true" &&
+      res.results.wrapped == "wrapped link clicked"
 
   - name: Keys go to the element that has the focus
     uses: browser

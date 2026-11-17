@@ -26,6 +26,10 @@
     <!-- A button below the fold of a page that scrolls smoothly, which a
          click with the mouse scrolls into view before it points at it. -->
     <button id="far" type="button">Far</button>
+    <!-- A link wrapped over two lines, the middle of whose two boxes is in
+         the gap at the end of the first line, on the paragraph. -->
+    <p id="wrap" style="width: 200px">Some words before a <a id="wrapped" href="#wrapped">link that wraps over the line</a> and after it.</p>
+    <p id="wrap-clicked">none</p>
     <p id="far-clicked">none</p>
   </div>
   <script>
@@ -43,6 +47,10 @@
     });
     document.getElementById("far").addEventListener("click", (e) => {
       document.getElementById("far-clicked").textContent = "far clicked, shift=" + e.shiftKey;
+    });
+    document.getElementById("wrapped").addEventListener("click", (e) => {
+      e.preventDefault();
+      document.getElementById("wrap-clicked").textContent = "wrapped link clicked";
     });
     const scroller = document.getElementById("scroller");
     scroller.addEventListener("scroll", () => {

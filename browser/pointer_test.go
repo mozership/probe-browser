@@ -17,6 +17,8 @@ func TestBuildActionTasks_PointerRefused(t *testing.T) {
 		{"a button on another action", map[string]any{"name": "hover", "x": 1, "y": 2, "button": "right"}, "hover does not take button: only click does"},
 		{"another button", map[string]any{"name": "click", "x": 1, "y": 2, "button": "back"}, `click: the button is "back"`},
 		{"a count of 4", map[string]any{"name": "click", "x": 1, "y": 2, "count": 4}, "click: the count is 4"},
+		{"a count of 0", map[string]any{"name": "click", "x": 1, "y": 2, "count": 0}, "click: the count is 0"},
+		{"a point out of the viewport", map[string]any{"name": "hover", "x": -1, "y": 2}, "hover: the point -1, 2 is not in the viewport"},
 		{"another modifier", map[string]any{"name": "click", "x": 1, "y": 2, "modifiers": "Hyper"}, `click: "Hyper" is not a modifier`},
 		{"a wheel with no direction", map[string]any{"name": "wheel", "x": 1, "y": 2}, `wheel: the direction is ""`},
 		{"a wheel with no point", map[string]any{"name": "wheel", "direction": "down"}, "wheel needs selector, has_text or ref, to find the element it acts on, or x and y"},

@@ -45,6 +45,10 @@ func (a *ChromeDPAction) checkPointer() error {
 		return fmt.Errorf("%s takes x and y together, the point of the viewport it acts at", a.Name)
 	case (x || y) && (a.Selector != "" || a.HasText != "" || a.Ref != ""):
 		return fmt.Errorf("%s takes x and y, or an element, but not both", a.Name)
+	case x && (a.X < 0 || a.Y < 0):
+		return fmt.Errorf("%s: the point %g, %g is not in the viewport, which x and y count from its top left corner", a.Name, a.X, a.Y)
+	case slices.Contains(a.given, "count") && a.Count == 0:
+		return fmt.Errorf("%s: the count is 0, but it is 1, 2 or 3", a.Name)
 	}
 	if a.Name != "click" {
 		for _, f := range mouseFields {
@@ -68,8 +72,11 @@ const pointScript = `((el) => {
 	// The scroll is instant, whatever scroll-behavior the page sets, so
 	// that the box is measured where the element has come to.
 	el.scrollIntoView({ block: "center", inline: "center", behavior: "instant" });
-	const r = el.getBoundingClientRect();
-	if (r.width === 0 && r.height === 0) {
+	// The middle of the first box the element shows, as a link wrapped
+	// over two lines has a box on each, and the middle of the two would
+	// fall between them, on something else.
+	const r = Array.from(el.getClientRects()).find((b) => b.width > 0 && b.height > 0);
+	if (!r) {
 		return { error: "the element has no box to point at" };
 	}
 	return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
