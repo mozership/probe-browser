@@ -3,10 +3,12 @@ package browser
 import (
 	"context"
 	"fmt"
+	jsonv2 "github.com/chromedp/cdproto/cdp/jsonv2"
 	"math"
 	"slices"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/chromedp/cdproto/network"
 	"github.com/chromedp/chromedp"
@@ -18,19 +20,27 @@ import (
 type NetworkError struct {
 	Method string `map:"method"`
 	URL    string `map:"url"`
-	// Status is 0 for a request that got no answer.
+	// Status is 0 for a request that got no answer, and that of the answer
+	// for one whose body failed after it.
 	Status int64 `map:"status"`
-	// Error is why a request that got no answer failed, as the browser
-	// says it, such as net::ERR_CONNECTION_REFUSED.
+	// Error is why a request failed when it got no answer or its body did
+	// not come whole, as the browser says it, such as
+	// net::ERR_CONNECTION_REFUSED.
 	Error string `map:"error"`
 }
 
-// String returns the request and how it failed, as GET /api 500.
+// String returns the request and how it failed, as GET /api 500, or GET
+// /api net::ERR_CONNECTION_REFUSED, or both, of a response whose body
+// failed.
 func (e NetworkError) String() string {
-	if e.Status == 0 {
-		return fmt.Sprintf("%s %s %s", e.Method, e.URL, e.Error)
+	parts := []string{e.Method, e.URL}
+	if e.Status != 0 {
+		parts = append(parts, fmt.Sprint(e.Status))
 	}
-	return fmt.Sprintf("%s %s %d", e.Method, e.URL, e.Status)
+	if e.Error != "" {
+		parts = append(parts, e.Error)
+	}
+	return strings.Join(parts, " ")
 }
 
 // Requests are the requests of the page over HTTP or HTTPS that ended while
@@ -54,10 +64,6 @@ type SlowRequest struct {
 // maxSlowest is how many of the slowest requests are kept.
 const maxSlowest = 5
 
-// maxNetworkErrors is how many network errors are kept, and how many a
-// failure's message names.
-const maxNetworkErrors = 20
-
 // netRequest is what the events of a request have told so far.
 type netRequest struct {
 	method, url string
@@ -70,101 +76,155 @@ type netRequest struct {
 	gotResponse bool
 }
 
-// networkRecorder keeps the requests of the page from when it starts.
+// networkRecorder keeps the events of the requests of the page from when
+// it starts, and puts the requests together from them when it stops.
 type networkRecorder struct {
-	cancel   context.CancelFunc
-	wg       sync.WaitGroup
-	mu       sync.Mutex
-	open     map[network.RequestID]*netRequest
+	cancel context.CancelFunc
+	wg     sync.WaitGroup
+	mu     sync.Mutex
+	// events are those of each method, in the order they came.
+	events map[string][]jsonv2.Value
+	// last is when the last event came.
+	last time.Time
+}
+
+// networkIdle is how long stop waits for no event to come, before it puts
+// the requests together: the events of what the actions did are sent
+// before the end mark of the console, but each method's reach the
+// recorder on a channel of its own.
+const networkIdle = 50 * time.Millisecond
+
+// networkMethods are the events of a request, in the order a request has
+// them: they come apart, one channel each, so they are put together once
+// they are all in, rather than as they come.
+var networkMethods = []string{
+	network.RequestWillBeSent.Method,
+	network.ResponseReceived.Method,
+	network.LoadingFailed.Method,
+	network.LoadingFinished.Method,
+}
+
+// recordNetwork starts keeping the events of the requests of the tab of
+// ctx until stop.
+func recordNetwork(ctx context.Context) *networkRecorder {
+	c := chromedp.FromContext(ctx)
+	if c == nil || c.Target == nil {
+		return nil
+	}
+	ctx, cancel := context.WithCancel(ctx)
+	r := &networkRecorder{cancel: cancel, events: map[string][]jsonv2.Value{}, last: time.Now()}
+	for _, m := range networkMethods {
+		events, unsubscribe := c.Target.Subscribe(m)
+		r.wg.Go(func() {
+			defer unsubscribe()
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case raw, ok := <-events:
+					if !ok {
+						return
+					}
+					r.mu.Lock()
+					r.events[m] = append(r.events[m], raw)
+					r.last = time.Now()
+					r.mu.Unlock()
+				}
+			}
+		})
+	}
+	return r
+}
+
+// requestSet puts requests together from their events.
+type requestSet struct {
+	byID     map[network.RequestID]*netRequest
+	order    []network.RequestID
 	errs     []NetworkError
 	requests Requests
 }
 
-// recordNetwork starts reading the events of the requests of the tab of ctx
-// until stop.
-func recordNetwork(ctx context.Context) *networkRecorder {
-	ctx, cancel := context.WithCancel(ctx)
-	r := &networkRecorder{cancel: cancel, open: map[network.RequestID]*netRequest{}, requests: Requests{Slowest: []SlowRequest{}}}
-	listen(r, chromedp.Events(ctx, network.RequestWillBeSent), func(ev network.EventRequestWillBeSent) network.RequestID { return ev.RequestID },
-		func(ev network.EventRequestWillBeSent, q *netRequest) {
-			// A redirect is sent again under the same ID, and is timed from
-			// the first request.
-			if q.sent == 0 {
-				q.sent = ev.Timestamp.Float64()
-			}
-			q.method, q.url = ev.Request.Method, ev.Request.URL
-			q.notHTTP = !strings.HasPrefix(q.url, "http:") && !strings.HasPrefix(q.url, "https:")
-		})
-	listen(r, chromedp.Events(ctx, network.ResponseReceived), func(ev network.EventResponseReceived) network.RequestID { return ev.RequestID },
-		func(ev network.EventResponseReceived, q *netRequest) {
-			if ev.Response != nil {
-				q.status, q.gotResponse = ev.Response.Status, true
-			}
-		})
-	listen(r, chromedp.Events(ctx, network.LoadingFailed), func(ev network.EventLoadingFailed) network.RequestID { return ev.RequestID },
-		func(ev network.EventLoadingFailed, q *netRequest) {
-			q.failed, q.canceled, q.errText = true, ev.Canceled, ev.ErrorText
-			q.ended = ev.Timestamp.Float64()
-		})
-	listen(r, chromedp.Events(ctx, network.LoadingFinished), func(ev network.EventLoadingFinished) network.RequestID { return ev.RequestID },
-		func(ev network.EventLoadingFinished, q *netRequest) {
-			q.ended = ev.Timestamp.Float64()
-		})
-	return r
+func (s *requestSet) of(id network.RequestID) *netRequest {
+	q, ok := s.byID[id]
+	if !ok {
+		q = &netRequest{}
+		s.byID[id] = q
+		s.order = append(s.order, id)
+	}
+	return q
 }
 
-// listen applies the events of seq to the requests of their IDs.
-func listen[E any](r *networkRecorder, seq func(func(E, error) bool), idOf func(E) network.RequestID, apply func(E, *netRequest)) {
-	r.wg.Go(func() {
-		for ev, err := range seq {
-			if err != nil {
-				return
-			}
-			r.mu.Lock()
-			id := idOf(ev)
-			q, ok := r.open[id]
-			if !ok {
-				q = &netRequest{}
-				r.open[id] = q
-			}
-			apply(ev, q)
-			r.settle(id, q)
-			r.mu.Unlock()
+// apply applies an event of method to its request. Of the events of one
+// method, a later one comes later, as a redirect is sent again under the
+// same ID, with its URL and method, after the first.
+func (s *requestSet) apply(method string, raw jsonv2.Value) error {
+	switch method {
+	case network.RequestWillBeSent.Method:
+		var ev network.EventRequestWillBeSent
+		if err := jsonv2.Unmarshal(raw, &ev); err != nil {
+			return err
 		}
-	})
+		q := s.of(ev.RequestID)
+		// A redirect is timed from the first request.
+		if q.sent == 0 {
+			q.sent = ev.Timestamp.Float64()
+		}
+		if ev.Request != nil {
+			q.method, q.url = ev.Request.Method, ev.Request.URL
+		}
+		q.notHTTP = !strings.HasPrefix(q.url, "http:") && !strings.HasPrefix(q.url, "https:")
+	case network.ResponseReceived.Method:
+		var ev network.EventResponseReceived
+		if err := jsonv2.Unmarshal(raw, &ev); err != nil {
+			return err
+		}
+		if ev.Response != nil {
+			q := s.of(ev.RequestID)
+			q.status, q.gotResponse = ev.Response.Status, true
+		}
+	case network.LoadingFailed.Method:
+		var ev network.EventLoadingFailed
+		if err := jsonv2.Unmarshal(raw, &ev); err != nil {
+			return err
+		}
+		q := s.of(ev.RequestID)
+		q.failed, q.canceled, q.errText = true, ev.Canceled, ev.ErrorText
+		q.ended = ev.Timestamp.Float64()
+	case network.LoadingFinished.Method:
+		var ev network.EventLoadingFinished
+		if err := jsonv2.Unmarshal(raw, &ev); err != nil {
+			return err
+		}
+		s.of(ev.RequestID).ended = ev.Timestamp.Float64()
+	}
+	return nil
 }
 
-// settle records a request whose events are all in: a failed one as a
-// network error, unless the page or the browser gave up on it, as when the
-// page went away, and a finished one by how long it took, and as a network
-// error when its status is 400 or more. r.mu is held.
-func (r *networkRecorder) settle(id network.RequestID, q *netRequest) {
-	done := q.sent > 0 && q.ended > 0 && (q.failed || q.gotResponse)
-	if !done {
-		return
-	}
-	delete(r.open, id)
-	if q.notHTTP {
-		return
-	}
-	r.requests.Count++
-	switch {
-	case q.failed && !q.canceled:
-		r.addError(NetworkError{Method: q.method, URL: q.url, Error: q.errText})
-	case !q.failed && q.status >= 400:
-		r.addError(NetworkError{Method: q.method, URL: q.url, Status: q.status})
-	}
-	if !q.failed {
-		r.requests.Slowest = slowest(r.requests.Slowest, SlowRequest{
-			Method: q.method, URL: q.url, Status: q.status,
-			DurationMS: int64(math.Round((q.ended - q.sent) * 1000)),
-		})
-	}
-}
-
-func (r *networkRecorder) addError(e NetworkError) {
-	if len(r.errs) < maxNetworkErrors {
-		r.errs = append(r.errs, e)
+// settle records the requests that ended, in the order they were first
+// seen: a failed one as a network error, unless the page or the browser
+// gave up on it, as when the page went away, with the status of a response
+// that came before its body failed; and a finished one by how long it
+// took, and as a network error when its status is 400 or more. A request
+// that has not ended, or of no HTTP, is left out.
+func (s *requestSet) settle() {
+	for _, id := range s.order {
+		q := s.byID[id]
+		if q.sent == 0 || q.ended == 0 || (!q.failed && !q.gotResponse) || q.notHTTP {
+			continue
+		}
+		s.requests.Count++
+		switch {
+		case q.failed && !q.canceled:
+			s.errs = append(s.errs, NetworkError{Method: q.method, URL: q.url, Status: q.status, Error: q.errText})
+		case !q.failed && q.status >= 400:
+			s.errs = append(s.errs, NetworkError{Method: q.method, URL: q.url, Status: q.status})
+		}
+		if !q.failed {
+			s.requests.Slowest = slowest(s.requests.Slowest, SlowRequest{
+				Method: q.method, URL: q.url, Status: q.status,
+				DurationMS: int64(math.Round((q.ended - q.sent) * 1000)),
+			})
+		}
 	}
 }
 
@@ -185,25 +245,36 @@ func slowest(list []SlowRequest, req SlowRequest) []SlowRequest {
 	return list[:min(len(list), maxSlowest)]
 }
 
-// stop ends the recording and returns what it kept; a nil recorder, as for
-// a runner that reads no network, has nothing. The events of what the
-// actions did come before stop is called, as the end mark of the console is
-// read first, on the same connection; a request that has not ended by then
-// is left out.
+// stop ends the recording, once no event has come for networkIdle, and
+// returns the requests: those that ended by then, as the events of what
+// the actions did came before the end mark of the console, which is read
+// first, on the same connection. A nil recorder, as for a runner that
+// reads no network, has none.
 func (r *networkRecorder) stop() ([]NetworkError, Requests) {
+	set := &requestSet{byID: map[network.RequestID]*netRequest{}, errs: []NetworkError{}, requests: Requests{Slowest: []SlowRequest{}}}
 	if r == nil {
-		return []NetworkError{}, Requests{Slowest: []SlowRequest{}}
+		return set.errs, set.requests
+	}
+	for {
+		r.mu.Lock()
+		quiet := time.Since(r.last)
+		r.mu.Unlock()
+		if quiet >= networkIdle {
+			break
+		}
+		time.Sleep(networkIdle - quiet)
 	}
 	r.cancel()
 	r.wg.Wait()
-	return r.stopped()
-}
-
-// stopped returns what the recorder kept.
-func (r *networkRecorder) stopped() ([]NetworkError, Requests) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	return append([]NetworkError{}, r.errs...), Requests{Count: r.requests.Count, Slowest: append([]SlowRequest{}, r.requests.Slowest...)}
+	// The events of each method are taken in turn, all of one before the
+	// next, in the order of networkMethods.
+	for _, m := range networkMethods {
+		for _, raw := range r.events[m] {
+			_ = set.apply(m, raw)
+		}
+	}
+	set.settle()
+	return set.errs, set.requests
 }
 
 // withNetworkErrors adds the network errors to the error of failed actions,

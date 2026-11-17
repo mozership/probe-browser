@@ -2,9 +2,11 @@ package browser
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
+	jsonv2 "github.com/chromedp/cdproto/cdp/jsonv2"
 	"github.com/chromedp/cdproto/network"
 )
 
@@ -40,33 +42,80 @@ func equalInts(a, b []int64) bool {
 	return true
 }
 
-func TestSettle(t *testing.T) {
-	r := &networkRecorder{open: map[network.RequestID]*netRequest{}, requests: Requests{Slowest: []SlowRequest{}}}
-	for id, q := range map[network.RequestID]*netRequest{
-		"ok":       {method: "GET", url: "https://a/ok", sent: 1, ended: 1.2, status: 200, gotResponse: true},
-		"broken":   {method: "POST", url: "https://a/broken", sent: 1, ended: 1.1, status: 503, gotResponse: true},
-		"refused":  {method: "GET", url: "https://b/", sent: 1, ended: 1.1, failed: true, errText: "net::ERR_CONNECTION_REFUSED"},
-		"canceled": {method: "GET", url: "https://a/gone", sent: 1, ended: 1.1, failed: true, canceled: true, errText: "net::ERR_ABORTED"},
-		"data":     {method: "GET", url: "data:,x", sent: 1, ended: 1.1, status: 200, gotResponse: true, notHTTP: true},
-		"open":     {method: "GET", url: "https://a/open", sent: 1, status: 200, gotResponse: true},
-	} {
-		r.open[id] = q
-		r.settle(id, q)
+func newRequestSet() *requestSet {
+	return &requestSet{byID: map[network.RequestID]*netRequest{}, errs: []NetworkError{}, requests: Requests{Slowest: []SlowRequest{}}}
+}
+
+// event is an event of a method, as the browser sends it.
+func event(t *testing.T, s *requestSet, method, raw string) {
+	t.Helper()
+	if err := s.apply(method, jsonv2.Value(raw)); err != nil {
+		t.Fatal(err)
 	}
-	errs, reqs := r.stopped()
-	if reqs.Count != 4 {
-		t.Errorf("count %d, want the four over HTTP that ended", reqs.Count)
+}
+
+func TestRequestSet(t *testing.T) {
+	s := newRequestSet()
+	sent := network.RequestWillBeSent.Method
+	resp := network.ResponseReceived.Method
+	failed := network.LoadingFailed.Method
+	finished := network.LoadingFinished.Method
+	// The events of a redirect, those of the other methods taken first, as
+	// the channels of the methods give them apart: the request is the last
+	// one sent under its ID, timed from the first.
+	event(t, s, finished, `{"requestId":"r","timestamp":3}`)
+	event(t, s, resp, `{"requestId":"r","response":{"status":200}}`)
+	event(t, s, sent, `{"requestId":"r","timestamp":1,"request":{"method":"POST","url":"https://a/form"}}`)
+	event(t, s, sent, `{"requestId":"r","timestamp":2,"request":{"method":"GET","url":"https://a/done"}}`)
+	// A response whose body failed after it.
+	event(t, s, sent, `{"requestId":"b","timestamp":1,"request":{"method":"GET","url":"https://a/big"}}`)
+	event(t, s, resp, `{"requestId":"b","response":{"status":200}}`)
+	event(t, s, failed, `{"requestId":"b","timestamp":1.5,"errorText":"net::ERR_CONTENT_LENGTH_MISMATCH"}`)
+	// No answer, a status of 500, one given up on, one not of HTTP, and one
+	// not ended.
+	event(t, s, sent, `{"requestId":"x","timestamp":1,"request":{"method":"GET","url":"https://b/"}}`)
+	event(t, s, failed, `{"requestId":"x","timestamp":1.1,"errorText":"net::ERR_CONNECTION_REFUSED"}`)
+	event(t, s, sent, `{"requestId":"e","timestamp":1,"request":{"method":"GET","url":"https://a/broken"}}`)
+	event(t, s, resp, `{"requestId":"e","response":{"status":500}}`)
+	event(t, s, finished, `{"requestId":"e","timestamp":1.1}`)
+	event(t, s, sent, `{"requestId":"c","timestamp":1,"request":{"method":"GET","url":"https://a/gone"}}`)
+	event(t, s, failed, `{"requestId":"c","timestamp":1.1,"canceled":true,"errorText":"net::ERR_ABORTED"}`)
+	event(t, s, sent, `{"requestId":"d","timestamp":1,"request":{"method":"GET","url":"data:,x"}}`)
+	event(t, s, finished, `{"requestId":"d","timestamp":1.1}`)
+	event(t, s, sent, `{"requestId":"o","timestamp":1,"request":{"method":"GET","url":"https://a/open"}}`)
+	s.settle()
+
+	if s.requests.Count != 5 {
+		t.Errorf("count %d, want the five over HTTP that ended", s.requests.Count)
+	}
+	if top := s.requests.Slowest[0]; top.URL != "https://a/done" || top.Method != "GET" || top.Status != 200 || top.DurationMS != 2000 {
+		t.Errorf("the slowest is %+v, want the redirect, its last URL, timed from the first", top)
 	}
 	var got []string
-	for _, e := range errs {
+	for _, e := range s.errs {
 		got = append(got, e.String())
 	}
-	joined := strings.Join(got, "; ")
-	if len(errs) != 2 || !strings.Contains(joined, "POST https://a/broken 503") || !strings.Contains(joined, "GET https://b/ net::ERR_CONNECTION_REFUSED") {
-		t.Errorf("network errors %q, want the broken and the refused, not the canceled", joined)
+	want := []string{
+		"GET https://a/big 200 net::ERR_CONTENT_LENGTH_MISMATCH",
+		"GET https://b/ net::ERR_CONNECTION_REFUSED",
+		"GET https://a/broken 500",
 	}
-	if _, ok := r.open["open"]; !ok {
-		t.Error("a request that has not ended was taken as done")
+	if strings.Join(got, "; ") != strings.Join(want, "; ") {
+		t.Errorf("network errors\n%q\nwant\n%q", got, want)
+	}
+}
+
+func TestRequestSet_KeepsEveryError(t *testing.T) {
+	s := newRequestSet()
+	for i := range 30 {
+		id := fmt.Sprintf("r%d", i)
+		event(t, s, network.RequestWillBeSent.Method, `{"requestId":"`+id+`","timestamp":1,"request":{"method":"GET","url":"https://a/`+id+`"}}`)
+		event(t, s, network.ResponseReceived.Method, `{"requestId":"`+id+`","response":{"status":503}}`)
+		event(t, s, network.LoadingFinished.Method, `{"requestId":"`+id+`","timestamp":1.1}`)
+	}
+	s.settle()
+	if len(s.errs) != 30 {
+		t.Errorf("%d network errors, want the 30", len(s.errs))
 	}
 }
 
