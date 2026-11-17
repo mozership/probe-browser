@@ -94,6 +94,11 @@ type networkRecorder struct {
 // recorder on a channel of its own.
 const networkIdle = 50 * time.Millisecond
 
+// networkDrain bounds how long stop waits for the events to go quiet, as
+// for a page that polls more often than networkIdle, which they never do
+// on.
+const networkDrain = 500 * time.Millisecond
+
 // networkMethods are the events of a request, in the order a request has
 // them: they come apart, one channel each, so they are put together once
 // they are all in, rather than as they come.
@@ -245,24 +250,26 @@ func slowest(list []SlowRequest, req SlowRequest) []SlowRequest {
 	return list[:min(len(list), maxSlowest)]
 }
 
-// stop ends the recording, once no event has come for networkIdle, and
-// returns the requests: those that ended by then, as the events of what
-// the actions did came before the end mark of the console, which is read
-// first, on the same connection. A nil recorder, as for a runner that
-// reads no network, has none.
+// stop ends the recording, once no event has come for networkIdle, or
+// networkDrain at most, and returns the requests: those that ended by
+// then, as the events of what the actions did came before the end mark of
+// the console, which is read first, on the same connection, and those of
+// the page that ended while it waited. A nil recorder, as for a runner
+// that reads no network, has none.
 func (r *networkRecorder) stop() ([]NetworkError, Requests) {
 	set := &requestSet{byID: map[network.RequestID]*netRequest{}, errs: []NetworkError{}, requests: Requests{Slowest: []SlowRequest{}}}
 	if r == nil {
 		return set.errs, set.requests
 	}
-	for {
+	deadline := time.Now().Add(networkDrain)
+	for time.Now().Before(deadline) {
 		r.mu.Lock()
 		quiet := time.Since(r.last)
 		r.mu.Unlock()
 		if quiet >= networkIdle {
 			break
 		}
-		time.Sleep(networkIdle - quiet)
+		time.Sleep(min(networkIdle-quiet, time.Until(deadline)))
 	}
 	r.cancel()
 	r.wg.Wait()

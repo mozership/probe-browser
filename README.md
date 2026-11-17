@@ -732,7 +732,7 @@ network_errors:
     error: net::ERR_CONNECTION_REFUSED
 ```
 
-A request still under way when the last action ends is not counted, so wait for what it brings, as with `wait_visible`, before the step ends. The browser asks for `/favicon.ico` of a page that names no icon, and a 404 for it is among the errors. When an action fails, the error names the first five network errors, as it names the console errors.
+A request still under way when the last action ends is not counted, so wait for what it brings, as with `wait_visible`, before the step ends. The step waits for the requests to go quiet for 50 ms, half a second at most, so a request of the page that ends then, as of a page that polls, can be among them. The browser asks for `/favicon.ico` of a page that names no icon, and a 404 for it is among the errors. When an action fails, the error names the first five network errors, as it names the console errors.
 
 ### Keeping a screenshot
 

@@ -1,10 +1,12 @@
 package browser
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	jsonv2 "github.com/chromedp/cdproto/cdp/jsonv2"
 	"github.com/chromedp/cdproto/network"
@@ -130,5 +132,32 @@ func TestWithNetworkErrors(t *testing.T) {
 	}
 	if got := withNetworkErrors(errors.New("x"), nil).Error(); got != "x" {
 		t.Errorf("got %q with none", got)
+	}
+}
+
+// TestStop_APagePollingDoesNotKeepItWaiting stops a recorder whose events
+// never go quiet, as of a page that polls.
+func TestStop_APagePollingDoesNotKeepItWaiting(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	r := &networkRecorder{cancel: cancel, events: map[string][]jsonv2.Value{}, last: time.Now()}
+	r.wg.Go(func() {
+		tick := time.NewTicker(10 * time.Millisecond)
+		defer tick.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-tick.C:
+				r.mu.Lock()
+				r.last = time.Now()
+				r.mu.Unlock()
+			}
+		}
+	})
+	start := time.Now()
+	r.stop()
+	if d := time.Since(start); d > networkDrain+200*time.Millisecond {
+		t.Errorf("stop took %s, want about %s at most", d, networkDrain)
 	}
 }
