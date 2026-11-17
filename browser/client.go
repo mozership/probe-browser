@@ -903,7 +903,11 @@ func (req *Req) do() (*Result, error) {
 	// Only of a browser of chromedp: on another context, as of a mock, the
 	// events of chromedp would start a browser of their own.
 	if _, ok := req.browserRunner.(*ChromeDPRunner); ok {
-		net = recordNetwork(browserCtx)
+		var pending []pendingRequest
+		if req.attaches() {
+			pending = req.session.pending
+		}
+		net = recordNetwork(browserCtx, pending)
 	}
 
 	ctx, actionsCancel := context.WithDeadline(browserCtx, deadline)
@@ -917,11 +921,14 @@ func (req *Req) do() (*Result, error) {
 	}
 	if err != nil {
 		errs := console.stop(browserCtx, req.browserRunner.Run)
-		netErrs, _ := net.stop()
+		netErrs, _, _ := net.stop()
 		return nil, req.withEvidence(browserCtx, withNetworkErrors(withConsoleErrors(err, errs), netErrs))
 	}
 	consoleErrors := console.stop(browserCtx, req.browserRunner.Run)
-	networkErrors, requests := net.stop()
+	networkErrors, requests, pending := net.stop()
+	if req.Session && req.session != nil {
+		req.session.used, req.session.pendingOut = true, pending
+	}
 
 	results, filePaths, err := req.collectResults()
 	if err != nil {

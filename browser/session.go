@@ -53,6 +53,44 @@ type sessionCall struct {
 	processes *actionrpc.Processes
 	// started is the browser the step started, for the state it leaves.
 	started *session
+	// pending are the requests the step before left, and pendingOut those
+	// the step leaves to the next; used is a step that kept its browser,
+	// whose state names them.
+	pending    []pendingRequest
+	pendingOut []pendingRequest
+	used       bool
+}
+
+// pendingFromState reads the requests the state of the job names pending.
+func pendingFromState(state map[string]any) []pendingRequest {
+	v, ok := state["pending"]
+	if !ok || v == nil {
+		return nil
+	}
+	b, err := json.Marshal(v)
+	if err != nil {
+		return nil
+	}
+	var out []pendingRequest
+	if json.Unmarshal(b, &out) != nil {
+		return nil
+	}
+	return out
+}
+
+// stateWith returns the state of the job that names s, and the requests
+// pending.
+func (s *session) stateWith(pending []pendingRequest) map[string]any {
+	state := s.state()
+	list := make([]any, len(pending))
+	for i, p := range pending {
+		b, _ := json.Marshal(p)
+		var m map[string]any
+		_ = json.Unmarshal(b, &m)
+		list[i] = m
+	}
+	state["pending"] = list
+	return state
 }
 
 // sessionFromState reads the browser the state of the job names, or nil

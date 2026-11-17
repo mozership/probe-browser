@@ -1,6 +1,7 @@
 package browser
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	jsonv2 "github.com/chromedp/cdproto/cdp/jsonv2"
@@ -77,6 +78,9 @@ type netRequest struct {
 	errText     string
 	notHTTP     bool
 	gotResponse bool
+	// carried is a request an earlier step left pending, whose response
+	// can have come between the steps, unseen.
+	carried bool
 }
 
 // networkRecorder keeps the events of the requests of the page from when
@@ -89,6 +93,8 @@ type networkRecorder struct {
 	events map[string][]jsonv2.Value
 	// last is when the last event came.
 	last time.Time
+	// pending are the requests an earlier step left.
+	pending []pendingRequest
 }
 
 // networkIdle is how long stop waits for no event to come, before it puts
@@ -112,15 +118,33 @@ var networkMethods = []string{
 	network.LoadingFinished.Method,
 }
 
+// pendingRequest is a request a step of a kept browser saw sent, and not
+// end, which the next step goes on with, so that a request the actions of
+// one step began, as a fetch that answers late, is recorded by the step it
+// ends in. It is kept in the state of the job.
+type pendingRequest struct {
+	ID       string  `json:"id"`
+	Method   string  `json:"method"`
+	URL      string  `json:"url"`
+	Sent     float64 `json:"sent"`
+	Status   int64   `json:"status,omitempty"`
+	Response bool    `json:"response,omitempty"`
+}
+
+// maxPending bounds the requests a step leaves to the next, the latest
+// sent kept, for a page whose requests never end, as a stream.
+const maxPending = 100
+
 // recordNetwork starts keeping the events of the requests of the tab of
-// ctx until stop.
-func recordNetwork(ctx context.Context) *networkRecorder {
+// ctx until stop, going on with the requests pending an earlier step of a
+// kept browser saw.
+func recordNetwork(ctx context.Context, pending []pendingRequest) *networkRecorder {
 	c := chromedp.FromContext(ctx)
 	if c == nil || c.Target == nil {
 		return nil
 	}
 	ctx, cancel := context.WithCancel(ctx)
-	r := &networkRecorder{cancel: cancel, events: map[string][]jsonv2.Value{}, last: time.Now()}
+	r := &networkRecorder{cancel: cancel, events: map[string][]jsonv2.Value{}, last: time.Now(), pending: pending}
 	for _, m := range networkMethods {
 		events, unsubscribe := c.Target.Subscribe(m)
 		r.wg.Go(func() {
@@ -217,7 +241,10 @@ func (s *requestSet) apply(method string, raw jsonv2.Value) error {
 func (s *requestSet) settle() {
 	for _, id := range s.order {
 		q := s.byID[id]
-		if q.sent == 0 || q.ended == 0 || (!q.failed && !q.gotResponse) || q.notHTTP {
+		// A request carried from a step before that finished is counted
+		// though its response came unseen, between the steps: of a status
+		// not known, 0, which is not taken for an error.
+		if q.sent == 0 || q.ended == 0 || (!q.failed && !q.gotResponse && !q.carried) || q.notHTTP {
 			continue
 		}
 		s.requests.Count++
@@ -261,10 +288,16 @@ func slowest(list []SlowRequest, req SlowRequest) []SlowRequest {
 // the console, which is read first, on the same connection, and those of
 // the page that ended while it waited. A nil recorder, as for a runner
 // that reads no network, has none.
-func (r *networkRecorder) stop() ([]NetworkError, Requests) {
+func (r *networkRecorder) stop() ([]NetworkError, Requests, []pendingRequest) {
 	set := &requestSet{byID: map[network.RequestID]*netRequest{}, errs: []NetworkError{}, requests: Requests{Slowest: []SlowRequest{}}}
 	if r == nil {
-		return set.errs, set.requests
+		return set.errs, set.requests, nil
+	}
+	for _, p := range r.pending {
+		q := set.of(network.RequestID(p.ID))
+		q.method, q.url, q.sent, q.status, q.gotResponse = p.Method, p.URL, p.Sent, p.Status, p.Response
+		q.carried = true
+		q.notHTTP = !strings.HasPrefix(q.url, "http:") && !strings.HasPrefix(q.url, "https:")
 	}
 	deadline := time.Now().Add(networkDrain)
 	for time.Now().Before(deadline) {
@@ -286,7 +319,22 @@ func (r *networkRecorder) stop() ([]NetworkError, Requests) {
 		}
 	}
 	set.settle()
-	return set.errs, set.requests
+	return set.errs, set.requests, set.pending()
+}
+
+// pending returns the requests sent and not ended, of HTTP or HTTPS, the
+// latest sent maxPending of them.
+func (s *requestSet) pending() []pendingRequest {
+	var out []pendingRequest
+	for _, id := range s.order {
+		q := s.byID[id]
+		if q.sent == 0 || q.ended != 0 || q.notHTTP {
+			continue
+		}
+		out = append(out, pendingRequest{ID: string(id), Method: q.method, URL: q.url, Sent: q.sent, Status: q.status, Response: q.gotResponse})
+	}
+	slices.SortStableFunc(out, func(a, b pendingRequest) int { return cmp.Compare(a.Sent, b.Sent) })
+	return out[max(0, len(out)-maxPending):]
 }
 
 // withNetworkErrors adds the network errors to the error of failed actions,
