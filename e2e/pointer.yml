@@ -84,6 +84,15 @@ jobs:
       - name: wait_text
         selector: "#page-scrolled"
         equals: "page scrolled: 200"
+      # The item is cut off by its list, so it is scrolled into view, and
+      # the wheel turns over it rather than over what is at its middle.
+      - name: wheel
+        selector: "#item"
+        direction: down
+        amount: 1
+      - name: wait_text
+        selector: "#item-scrolled"
+        equals: "item scrolled: 100"
     test: res.code == 0
 
   - name: A click with the mouse reaches an element below the fold of a page that scrolls smoothly, and a link wrapped over two lines

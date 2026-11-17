@@ -74,15 +74,30 @@ func (a *ChromeDPAction) checkPointer() error {
 
 // pointScript scrolls the element into view and gives the middle of it, as
 // the mouse goes to, or why it cannot. With keep, an element whose middle
-// is in the viewport is not scrolled, so that a wheel over it does not undo
-// what the wheel before scrolled.
+// is shown, in the viewport and not cut off by a container, is not
+// scrolled, so that a wheel over it does not undo what the wheel before
+// scrolled.
 const pointScript = `((el, keep) => {
 	if (!el) {
 		return { error: "no element matched" };
 	}
 	const box = () => Array.from(el.getClientRects()).find((b) => b.width > 0 && b.height > 0);
-	const shown = (b) => b && b.left + b.width / 2 >= 0 && b.top + b.height / 2 >= 0 &&
-		b.left + b.width / 2 < innerWidth && b.top + b.height / 2 < innerHeight;
+	// The middle is shown when the element is what the page shows there,
+	// not cut off by a container that scrolls, nor out of the viewport. The
+	// point is looked up in the element's root, as a shadow root's.
+	const shown = (b) => {
+		if (!b) {
+			return false;
+		}
+		const x = b.left + b.width / 2;
+		const y = b.top + b.height / 2;
+		if (x < 0 || y < 0 || x >= innerWidth || y >= innerHeight) {
+			return false;
+		}
+		const root = el.getRootNode();
+		const hit = (root.elementFromPoint ? root : document).elementFromPoint(x, y);
+		return Boolean(hit) && (hit === el || el.contains(hit));
+	};
 	// The scroll is instant, whatever scroll-behavior the page sets, so
 	// that the box is measured where the element has come to.
 	if (!keep || !shown(box())) {

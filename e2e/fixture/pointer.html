@@ -23,6 +23,13 @@
     <div id="scroller"><div>tall</div></div>
     <p id="scrolled">scrolled: 0</p>
     <p id="page-scrolled">page scrolled: 0</p>
+    <!-- A list that scrolls, whose last item is cut off by it though the
+         middle of the item is in the viewport. -->
+    <div id="list" style="height: 60px; overflow: auto">
+      <div style="height: 200px">top of the list</div>
+      <div id="item" style="height: 40px; overflow: auto"><div style="height: 400px">an item that scrolls</div></div>
+    </div>
+    <p id="item-scrolled">item scrolled: 0</p>
     <input id="field">
     <!-- A button below the fold of a page that scrolls smoothly, which a
          click with the mouse scrolls into view before it points at it. -->
@@ -55,6 +62,10 @@
     });
     addEventListener("scroll", () => {
       document.getElementById("page-scrolled").textContent = "page scrolled: " + Math.round(scrollY);
+    });
+    const item = document.getElementById("item");
+    item.addEventListener("scroll", () => {
+      document.getElementById("item-scrolled").textContent = "item scrolled: " + item.scrollTop;
     });
     const scroller = document.getElementById("scroller");
     scroller.addEventListener("scroll", () => {
