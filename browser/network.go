@@ -78,6 +78,9 @@ type netRequest struct {
 	errText     string
 	notHTTP     bool
 	gotResponse bool
+	// carried is a request an earlier step left pending, whose response
+	// can have come between the steps, unseen.
+	carried bool
 }
 
 // networkRecorder keeps the events of the requests of the page from when
@@ -238,7 +241,10 @@ func (s *requestSet) apply(method string, raw jsonv2.Value) error {
 func (s *requestSet) settle() {
 	for _, id := range s.order {
 		q := s.byID[id]
-		if q.sent == 0 || q.ended == 0 || (!q.failed && !q.gotResponse) || q.notHTTP {
+		// A request carried from a step before that finished is counted
+		// though its response came unseen, between the steps: of a status
+		// not known, 0, which is not taken for an error.
+		if q.sent == 0 || q.ended == 0 || (!q.failed && !q.gotResponse && !q.carried) || q.notHTTP {
 			continue
 		}
 		s.requests.Count++
@@ -290,6 +296,7 @@ func (r *networkRecorder) stop() ([]NetworkError, Requests, []pendingRequest) {
 	for _, p := range r.pending {
 		q := set.of(network.RequestID(p.ID))
 		q.method, q.url, q.sent, q.status, q.gotResponse = p.Method, p.URL, p.Sent, p.Status, p.Response
+		q.carried = true
 		q.notHTTP = !strings.HasPrefix(q.url, "http:") && !strings.HasPrefix(q.url, "https:")
 	}
 	deadline := time.Now().Add(networkDrain)

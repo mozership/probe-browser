@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -413,23 +414,35 @@ func TestTarget_ARefGone(t *testing.T) {
 }
 
 // TestRunStep_GoesOnWithARequestPending sends a request in one step of a
-// kept browser that answers in the next: the next step, given the state
-// the first left, records it, timed from when it was sent.
+// kept browser that the server answers once the next step has begun, when
+// a button of it fetches the release: the next step, given the state the
+// first left, records the request, timed from when it was sent.
 func TestRunStep_GoesOnWithARequestPending(t *testing.T) {
 	if testing.Short() {
 		t.Skip("starts Chrome")
 	}
 	t.Setenv(CacheDirEnv, t.TempDir())
+	release := make(chan struct{})
+	var once sync.Once
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/slow" {
-			time.Sleep(1500 * time.Millisecond)
+		switch r.URL.Path {
+		case "/slow":
+			<-release
+			// It takes a while yet, so that its time is known to be more
+			// than the step's own.
+			time.Sleep(300 * time.Millisecond)
 			fmt.Fprint(w, "slow")
-			return
+		case "/release":
+			once.Do(func() { close(release) })
+			fmt.Fprint(w, "released")
+		default:
+			fmt.Fprint(w, `<!doctype html><title>t</title><link rel="icon" href="data:,"><p id="out">none</p>
+<button id="go" onclick="fetch('/slow').then((r) => r.text()).then((t) => document.getElementById('out').textContent = t)">Go</button>
+<button id="release" onclick="fetch('/release')">Release</button>`)
 		}
-		fmt.Fprint(w, `<!doctype html><title>t</title><link rel="icon" href="data:,"><p id="out">none</p>
-<button id="go" onclick="fetch('/slow').then((r) => r.text()).then((t) => document.getElementById('out').textContent = t)">Go</button>`)
 	}))
 	defer srv.Close()
+	defer once.Do(func() { close(release) })
 
 	a := &Action{log: hclog.NewNullLogger()}
 	run := "run-pending-" + strconv.Itoa(os.Getpid())
@@ -459,14 +472,21 @@ func TestRunStep_GoesOnWithARequestPending(t *testing.T) {
 	if p := pendingFromState(state); len(p) != 1 || !strings.HasSuffix(p[0].URL, "/slow") {
 		t.Fatalf("pending %+v, want the slow request", p)
 	}
-	res := step(map[string]any{"name": "wait_text", "selector": "#out", "equals": "slow"})
-	got := fmt.Sprint(res["requests"])
-	if !strings.Contains(got, "/slow") {
-		t.Fatalf("requests %s, want the slow one the step before sent", got)
+	res := step(
+		map[string]any{"name": "click", "selector": "#release"},
+		map[string]any{"name": "wait_text", "selector": "#out", "equals": "slow"},
+	)
+	var slow map[string]any
+	for _, r := range res["requests"].(map[string]any)["slowest"].([]any) {
+		if r := r.(map[string]any); strings.HasSuffix(r["url"].(string), "/slow") {
+			slow = r
+		}
 	}
-	slow := res["requests"].(map[string]any)["slowest"].([]any)[0].(map[string]any)
-	if ms, _ := slow["duration_ms"].(int64); ms < 1400 {
-		t.Errorf("the slow request took %v ms, want it timed from when it was sent", slow["duration_ms"])
+	if slow == nil {
+		t.Fatalf("requests %v, want the slow one the step before sent", res["requests"])
+	}
+	if ms, _ := slow["duration_ms"].(int64); ms < 300 || slow["status"] != int64(200) {
+		t.Errorf("the slow request %v, want it answered, of 300 ms or more", slow)
 	}
 	if p := pendingFromState(state); len(p) != 0 {
 		t.Errorf("pending %+v after it ended", p)

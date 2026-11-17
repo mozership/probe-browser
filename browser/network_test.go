@@ -170,3 +170,23 @@ func TestStop_APagePollingDoesNotKeepItWaiting(t *testing.T) {
 		t.Errorf("stop took %s, want about %s at most", d, networkDrain)
 	}
 }
+
+// TestRequestSet_ACarriedRequestAnsweredUnseen settles a request a step
+// before left pending, whose response came between the steps and whose end
+// the step sees: it is counted, of a status not known, and is no error.
+func TestRequestSet_ACarriedRequestAnsweredUnseen(t *testing.T) {
+	s := newRequestSet()
+	q := s.of("c")
+	q.method, q.url, q.sent, q.carried = "GET", "https://a/late", 1, true
+	event(t, s, network.LoadingFinished.Method, `{"requestId":"c","timestamp":3}`)
+	s.settle()
+	if s.requests.Count != 1 || len(s.errs) != 0 {
+		t.Fatalf("count %d, errors %v; want it counted, no error", s.requests.Count, s.errs)
+	}
+	if r := s.requests.Slowest[0]; r.URL != "https://a/late" || r.Status != 0 || r.DurationMS != 2000 {
+		t.Errorf("the request %+v", r)
+	}
+	if p := s.pending(); len(p) != 0 {
+		t.Errorf("pending %+v after it ended", p)
+	}
+}
