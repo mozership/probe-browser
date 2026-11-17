@@ -8,32 +8,40 @@ import (
 )
 
 // oneTabScript installs, once a document, what has a link that would open
-// a window, by its target or by that of the page's base, and window.open,
-// open their page in the tab instead, while window.__probeOneTab.on is
-// true; it turns it on. A step of a kept browser without one_tab turns it
-// off, window.open answering as the page's own then.
+// a window and window.open open their page in the tab instead, while
+// window.__probeOneTab.on is true; it turns it on. A link opens a window by
+// its target or that of the page's base, by a click with Control, Meta or
+// Shift, or by the middle button. The link is not changed: a listener of
+// the window, which hears a click after the page's own handlers, moves the
+// tab for a click they did not cancel. A step of a kept browser without
+// one_tab turns it off, window.open answering as the page's own then.
 const oneTabScript = `(() => {
 	if (!window.__probeOneTab) {
 		const open = window.open;
 		const state = { on: false };
 		window.__probeOneTab = state;
-		document.addEventListener("click", (e) => {
-			if (!state.on) {
+		const follow = (e) => {
+			if (!state.on || e.defaultPrevented || (e.type === "auxclick" && e.button !== 1)) {
 				return;
 			}
 			// The link is found up the composed path, as one in a shadow
-			// root is retargeted to its host, and its target is its own or
-			// the base's.
+			// root is retargeted to its host.
 			const a = e.composedPath().find((n) => n instanceof Element && n.matches("a[href], area[href]"));
-			if (!a) {
+			if (!a || a.hasAttribute("download") || a.protocol === "javascript:") {
 				return;
 			}
 			const base = a.ownerDocument.querySelector("base[target]");
-			const target = a.getAttribute("target") || (base ? base.getAttribute("target") : "");
-			if (target && target !== "_self") {
-				a.target = "_self";
+			const target = (a.getAttribute("target") || (base ? base.getAttribute("target") : "") || "").toLowerCase();
+			const opens = (target && !["_self", "_top", "_parent"].includes(target)) ||
+				e.type === "auxclick" || e.ctrlKey || e.metaKey || e.shiftKey;
+			if (!opens) {
+				return;
 			}
-		}, true);
+			e.preventDefault();
+			location.href = a.href;
+		};
+		addEventListener("click", follow);
+		addEventListener("auxclick", follow);
 		window.open = function (url, ...rest) {
 			if (!state.on) {
 				return open.call(window, url, ...rest);

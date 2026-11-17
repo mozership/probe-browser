@@ -433,7 +433,7 @@ The package `github.com/mozership/probe-browser/outline` reads a page so for ano
 
 ### Keeping to one tab
 
-The actions drive the tab the step opened, so a page a link opens in a new window, by `target="_blank"`, or a script with `window.open`, is out of their reach. `one_tab: true` has those open their page in the tab instead: a script in every page the tab opens turns the `target` of a link that is clicked, its own or that of the page's `<base>`, into `_self`, and `window.open` into a move of the tab. It is of the step: in a kept browser, a step after it without `one_tab` has the page's own windows again. A step that follows such a link, as to a help page, goes on with the page it opens.
+The actions drive the tab the step opened, so a page a link opens in a new window, by `target="_blank"`, or a script with `window.open`, is out of their reach. `one_tab: true` has those open their page in the tab instead: a script in every page the tab opens moves the tab to the page of a link that would open a window, by its `target` or that of the page's `<base>`, by a click with Control, Meta or Shift, or by the middle button, and turns `window.open` into a move of the tab. The link is left as it is, and a click the page's own handler cancels moves nothing. It is of the step: in a kept browser, a step after it without `one_tab` has the page's own windows again. A step that follows such a link, as to a help page, goes on with the page it opens.
 
 ```yaml
   - name: The help link opens the guide
