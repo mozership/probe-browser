@@ -539,8 +539,14 @@ func (req *Req) buildActionTasks() ([]chromedp.Action[chromedp.Void], error) {
 		tasks = append(tasks, loadStorageState(s))
 	}
 	// The requests of the page are read from here on: the pages the storage
-	// state opens are answered inside the browser, and are none of its.
+	// state opens are answered inside the browser, and are none of its. A
+	// step that attaches to a kept browser loads no state, and reads them
+	// from the first task, so that a request the step before left pending
+	// is not missed while the tab is set up.
 	req.recordFrom = len(tasks)
+	if req.attaches() {
+		req.recordFrom = 0
+	}
 
 	for _, action := range req.Actions {
 		// Only wait_text waits for a text, so on any other action the fields
