@@ -147,8 +147,10 @@ func TestRunStep_KeepsTheBrowser(t *testing.T) {
 	if err != nil {
 		t.Fatalf("second step: %v", err)
 	}
-	if state2 != nil {
-		t.Errorf("the second step left state %v, want the first's kept", state2)
+	// The second step names the browser the first kept, beside the
+	// requests it leaves pending.
+	if again, err := sessionFromState(state2); err != nil || again == nil || *again != *kept {
+		t.Errorf("the second step left state %v, %v; want the browser the first kept", state2, err)
 	}
 	if got := fmt.Sprint(ret["res"]); !strings.Contains(got, "q:kept") {
 		t.Errorf("res = %s, want q kept from the first step", got)
@@ -407,5 +409,66 @@ func TestTarget_ARefGone(t *testing.T) {
 	}
 	if err := chromedp.Do(ctx, chromedp.WaitNotPresent(tg.path(), tg.opts()...)); err != nil {
 		t.Errorf("the query of a ref gone found something: %v", err)
+	}
+}
+
+// TestRunStep_GoesOnWithARequestPending sends a request in one step of a
+// kept browser that answers in the next: the next step, given the state
+// the first left, records it, timed from when it was sent.
+func TestRunStep_GoesOnWithARequestPending(t *testing.T) {
+	if testing.Short() {
+		t.Skip("starts Chrome")
+	}
+	t.Setenv(CacheDirEnv, t.TempDir())
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/slow" {
+			time.Sleep(1500 * time.Millisecond)
+			fmt.Fprint(w, "slow")
+			return
+		}
+		fmt.Fprint(w, `<!doctype html><title>t</title><link rel="icon" href="data:,"><p id="out">none</p>
+<button id="go" onclick="fetch('/slow').then((r) => r.text()).then((t) => document.getElementById('out').textContent = t)">Go</button>`)
+	}))
+	defer srv.Close()
+
+	a := &Action{log: hclog.NewNullLogger()}
+	run := "run-pending-" + strconv.Itoa(os.Getpid())
+	t.Cleanup(func() { _ = cleanupSessions(run) })
+	var state map[string]any
+	step := func(actions ...any) map[string]any {
+		t.Helper()
+		ret, next, err := a.RunStep(actionrpc.Call{
+			With:      map[string]any{"session": true, "headless": true, "timeout": "30s", "evidence_dir": t.TempDir(), "actions": actions},
+			State:     state,
+			Step:      actionrpc.Step{RunID: run},
+			Cleanups:  &actionrpc.Cleanups{},
+			Processes: &actionrpc.Processes{},
+		})
+		if err != nil {
+			if strings.Contains(err.Error(), "executable file not found") {
+				t.Skipf("no Chrome to start: %v", err)
+			}
+			t.Fatal(err)
+		}
+		if next != nil {
+			state = next
+		}
+		return ret["res"].(map[string]any)
+	}
+	step(map[string]any{"name": "navigate", "url": srv.URL}, map[string]any{"name": "click", "selector": "#go"})
+	if p := pendingFromState(state); len(p) != 1 || !strings.HasSuffix(p[0].URL, "/slow") {
+		t.Fatalf("pending %+v, want the slow request", p)
+	}
+	res := step(map[string]any{"name": "wait_text", "selector": "#out", "equals": "slow"})
+	got := fmt.Sprint(res["requests"])
+	if !strings.Contains(got, "/slow") {
+		t.Fatalf("requests %s, want the slow one the step before sent", got)
+	}
+	slow := res["requests"].(map[string]any)["slowest"].([]any)[0].(map[string]any)
+	if ms, _ := slow["duration_ms"].(int64); ms < 1400 {
+		t.Errorf("the slow request took %v ms, want it timed from when it was sent", slow["duration_ms"])
+	}
+	if p := pendingFromState(state); len(p) != 0 {
+		t.Errorf("pending %+v after it ended", p)
 	}
 }

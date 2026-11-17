@@ -33,20 +33,29 @@ func (a *Action) RunStep(call actionrpc.Call) (map[string]any, map[string]any, e
 		if err != nil {
 			return nil, nil, err
 		}
-		sc = &sessionCall{runID: call.Step.RunID, kept: kept, processes: call.Processes}
+		sc = &sessionCall{runID: call.Step.RunID, kept: kept, processes: call.Processes, pending: pendingFromState(call.State)}
 	}
 	ret, err := a.run(call.With, sc)
-	if sc == nil || sc.started == nil {
+	if sc == nil {
 		return ret, nil, err
 	}
 	if err != nil {
 		// Probe keeps no state a failed step returns, so the browser it
 		// started could not be reached again: the next step with session
 		// starts another.
-		discardSession(sc.started)
+		if sc.started != nil {
+			discardSession(sc.started)
+		}
 		return ret, nil, err
 	}
-	return ret, sc.started.state(), nil
+	switch {
+	case sc.started != nil:
+		return ret, sc.started.stateWith(sc.pendingOut), nil
+	case sc.used && sc.kept != nil:
+		// The browser is the one kept; the requests pending are of now.
+		return ret, sc.kept.stateWith(sc.pendingOut), nil
+	}
+	return ret, nil, nil
 }
 
 // Cleanup stops the browsers the steps of the run kept.
