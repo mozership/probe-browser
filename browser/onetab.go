@@ -14,7 +14,9 @@ import (
 // Shift, or by the middle button. The link is not changed: a listener of
 // the window, which hears a click after the page's own handlers, moves the
 // tab for a click they did not cancel. A step of a kept browser without
-// one_tab turns it off, window.open answering as the page's own then.
+// one_tab turns it off, window.open answering as the page's own then. A
+// handler of the window that comes after, and cancels the click, still
+// keeps the tab where it is.
 const oneTabScript = `(() => {
 	if (!window.__probeOneTab) {
 		const open = window.open;
@@ -37,8 +39,23 @@ const oneTabScript = `(() => {
 			if (!opens) {
 				return;
 			}
-			e.preventDefault();
-			location.href = a.href;
+			// The window the browser would open is held back now, and the
+			// tab moved once the click has gone through every handler, so
+			// that a handler of the window after this one can still cancel
+			// it, as its preventDefault is heard.
+			const hold = Event.prototype.preventDefault.bind(e);
+			let canceled = false;
+			e.preventDefault = () => {
+				canceled = true;
+				hold();
+			};
+			hold();
+			const href = a.href;
+			setTimeout(() => {
+				if (!canceled) {
+					location.href = href;
+				}
+			});
 		};
 		addEventListener("click", follow);
 		addEventListener("auxclick", follow);

@@ -12,11 +12,17 @@
   <button id="open" type="button">Open the input page</button>
   <!-- A link of a new window whose click the page cancels, which stays. -->
   <a id="canceled" href="/input.html" target="_blank">A link the page cancels</a>
+  <!-- A link whose click a handler of the window, added after the page
+       loaded, cancels. -->
+  <a id="canceled-late" href="/input.html" target="_blank">A link the window cancels</a>
   <button id="hover-me" type="button">Hover me</button>
   <p id="entered">none</p>
   <script>
     document.getElementById("open").addEventListener("click", () => window.open("/input.html"));
     document.getElementById("canceled").addEventListener("click", (e) => e.preventDefault());
+    addEventListener("load", () => addEventListener("click", (e) => {
+      if (e.target.id === "canceled-late") e.preventDefault();
+    }));
     // mouseenter comes of the mouse moving onto the button, not of a
     // mouseover event sent to it.
     document.getElementById("hover-me").addEventListener("mouseenter", () => {

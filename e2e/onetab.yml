@@ -79,6 +79,8 @@ jobs:
         url: "{{vars.url}}/onetab.html"
       - name: click
         selector: "#canceled"
+      - name: click
+        selector: "#canceled-late"
       - name: wait_ready
       - name: url
         id: url
