@@ -211,6 +211,12 @@ type Req struct {
 	Headless bool              `map:"headless"`
 	WindowW  int               `map:"window_w"`
 	WindowH  int               `map:"window_h"`
+	// ViewportW and ViewportH set the viewport, the part of the window the
+	// page shows in, to that size in CSS pixels, which a window's leaves
+	// smaller by what the browser shows around it. 0 leaves it to the
+	// window.
+	ViewportW int `map:"viewport_w"`
+	ViewportH int `map:"viewport_h"`
 	// EvidenceDir is where the page is saved when the actions fail. Empty
 	// means the system's temporary directory.
 	EvidenceDir string `map:"evidence_dir"`
@@ -509,6 +515,15 @@ func (req *Req) buildActionTasks() ([]chromedp.Action[chromedp.Void], error) {
 
 	// A step that attaches to the browser of the job finds it as the step
 	// before left it, which loading a state would take back to about:blank.
+	// The viewport is set on every step, as a browser keeps it only for the
+	// connection that set it.
+	if (req.ViewportW == 0) != (req.ViewportH == 0) || req.ViewportW < 0 || req.ViewportH < 0 {
+		return nil, fmt.Errorf("viewport_w and viewport_h go together, each 1 or more: they are %d and %d", req.ViewportW, req.ViewportH)
+	}
+	if req.ViewportW > 0 {
+		tasks = append(tasks, chromedp.EmulateViewport(int64(req.ViewportW), int64(req.ViewportH)))
+	}
+
 	if req.OneTab {
 		tasks = append(tasks, oneTab(&req.oneTabScript))
 	}
