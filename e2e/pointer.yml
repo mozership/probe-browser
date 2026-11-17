@@ -1,0 +1,92 @@
+name: Browser Pointer
+description: |
+  Clicks, double clicks, right clicks and hovers at points of the viewport,
+  with a button, a count and modifiers, turns the wheel over an element,
+  and types and presses keys into the element that has the focus.
+  Serve the fixture page first, as e2e/workflow.yml does:
+  go run ./e2e/server
+actions:
+  browser: ./action
+vars:
+  url: "{{ URL ?? 'http://localhost:8090' }}"
+jobs:
+- name: Pointer
+  steps:
+  - name: The mouse acts at points of the pad
+    uses: browser
+    with:
+      headless: true
+      timeout: 30s
+      actions:
+      - name: navigate
+        url: "{{vars.url}}/pointer.html"
+      - name: click
+        x: 50
+        y: 60
+      - name: click
+        x: 70
+        y: 80
+        count: 2
+        modifiers: [Shift]
+      - name: right_click
+        x: 10
+        y: 20
+      - name: click
+        x: 30
+        y: 40
+        button: middle
+      - name: hover
+        x: 123
+        y: 45
+      - name: text
+        id: events
+        selector: "#events"
+      - name: text
+        id: hovered
+        selector: "#hovered"
+    test: |
+      res.code == 0 &&
+      res.results.events contains "click button=0 detail=1 mods=none at 50,60;" &&
+      res.results.events contains "click button=0 detail=2 mods=shift at 70,80;" &&
+      res.results.events contains "dblclick button=0 detail=2 mods=shift at 70,80;" &&
+      res.results.events contains "contextmenu button=2 detail=0 mods=none at 10,20;" &&
+      res.results.events contains "auxclick button=1 detail=1 mods=none at 30,40;" &&
+      res.results.hovered == "hovered at 123,45"
+
+  - name: The wheel turns over an element
+    uses: browser
+    with:
+      headless: true
+      timeout: 30s
+      actions:
+      - name: navigate
+        url: "{{vars.url}}/pointer.html"
+      - name: wheel
+        selector: "#scroller"
+        direction: down
+        amount: 2
+      - name: wait_text
+        selector: "#scrolled"
+        equals: "scrolled: 200"
+    test: res.code == 0
+
+  - name: Keys go to the element that has the focus
+    uses: browser
+    with:
+      headless: true
+      timeout: 30s
+      actions:
+      - name: navigate
+        url: "{{vars.url}}/pointer.html"
+      - name: click
+        selector: "#field"
+      - name: type
+        value: abcd
+      # abcd| → abc|d → ab|d, then a|bd → |bd.
+      - name: press
+        value: ArrowLeft Backspace
+        repeat: 2
+      - name: value
+        id: field
+        selector: "#field"
+    test: res.code == 0 && res.results.field == "bd"

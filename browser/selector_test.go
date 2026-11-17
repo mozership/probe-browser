@@ -83,6 +83,9 @@ func TestBuildActionTasks_EveryElementActionTakesHasText(t *testing.T) {
 			if name == "press" {
 				action.Value = "Enter"
 			}
+			if name == "wheel" {
+				action.Direction = "down"
+			}
 			req := NewReq()
 			req.Actions = []*ChromeDPAction{action}
 			if _, err := req.buildActionTasks(); err != nil {

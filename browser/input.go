@@ -87,14 +87,6 @@ func typeText(tg target, value string) chromedp.Action[chromedp.Void] {
 	}
 }
 
-// keyModifiers are the modifiers a press can hold, by the names it takes.
-var keyModifiers = map[string]chromedp.Modifier{
-	"Alt":     chromedp.ModifierAlt,
-	"Control": chromedp.ModifierCtrl,
-	"Meta":    chromedp.ModifierMeta,
-	"Shift":   chromedp.ModifierShift,
-}
-
 // keyNames are the keys a press takes by name, such as Enter, with the
 // character kb encodes each of them by. A key whose name is one character,
 // such as a or " ", is given as that character instead, though Space is
@@ -127,7 +119,7 @@ func parseKey(s string) (rune, []chromedp.Modifier, error) {
 
 	var modifiers []chromedp.Modifier
 	for _, m := range mods {
-		mod, ok := keyModifiers[m]
+		mod, ok := modifierOf(m)
 		if !ok {
 			return 0, nil, fmt.Errorf("press %q: %q is not a modifier: use Alt, Control, Meta or Shift", s, m)
 		}
@@ -143,14 +135,39 @@ func parseKey(s string) (rune, []chromedp.Modifier, error) {
 	return 0, nil, fmt.Errorf("press %q: %q is not a key: give a key name, such as Enter, Tab, Escape or ArrowDown, or a single character", s, name)
 }
 
-// pressKey returns an action that presses key: on the target, once it is
-// visible and focused, or on the element that has the focus without one.
-func pressKey(tg target, key string) (chromedp.Action[chromedp.Void], error) {
-	r, modifiers, err := parseKey(key)
-	if err != nil {
-		return nil, err
+// pressKeys returns an action that presses the keys of value, apart by
+// spaces, as Control+a Backspace, repeat times, 1 when repeat is 0: on the
+// target, once it is visible and focused, or on the element that has the
+// focus without one. A value of spaces alone is the key it is.
+func pressKeys(tg target, value string, repeat int) (chromedp.Action[chromedp.Void], error) {
+	if repeat < 0 {
+		return nil, fmt.Errorf("press: repeat is %d, but it is how many times to press, 1 or more", repeat)
 	}
-	press := chromedp.KeyEvent(string(r), chromedp.KeyModifiers(modifiers...))
+	if repeat == 0 {
+		repeat = 1
+	}
+	keys := strings.Fields(value)
+	if len(keys) == 0 {
+		keys = []string{value}
+	}
+	var presses []chromedp.Action[chromedp.Void]
+	for _, key := range keys {
+		r, modifiers, err := parseKey(key)
+		if err != nil {
+			return nil, err
+		}
+		presses = append(presses, chromedp.KeyEvent(string(r), chromedp.KeyModifiers(modifiers...)))
+	}
+	press := func(ctx context.Context, t *chromedp.Target) (chromedp.Void, error) {
+		for range repeat {
+			for _, p := range presses {
+				if _, err := p(ctx, t); err != nil {
+					return chromedp.Void{}, err
+				}
+			}
+		}
+		return chromedp.Void{}, nil
+	}
 	if tg.empty() {
 		return press, nil
 	}

@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Probe Browser Pointer Fixture</title>
+  <style>
+    body { margin: 0; }
+    #pad { position: absolute; left: 0; top: 0; width: 400px; height: 200px; background: #eee; }
+    #below { position: absolute; left: 0; top: 220px; }
+    #scroller { height: 150px; width: 300px; overflow: auto; }
+    #scroller div { height: 2000px; }
+  </style>
+</head>
+<body>
+  <!-- A pad at the top left of the viewport, so that a point of it is
+       known, which writes down the events of the mouse it gets. -->
+  <div id="pad">pad</div>
+  <div id="below">
+    <p id="events"></p>
+    <p id="hovered">none</p>
+    <div id="scroller"><div>tall</div></div>
+    <p id="scrolled">scrolled: 0</p>
+    <input id="field">
+  </div>
+  <script>
+    const pad = document.getElementById("pad");
+    const events = document.getElementById("events");
+    const mods = (e) => ["ctrlKey", "shiftKey", "altKey", "metaKey"].filter((m) => e[m]).map((m) => m.replace("Key", "")).join("+") || "none";
+    for (const type of ["click", "dblclick", "auxclick", "contextmenu"]) {
+      pad.addEventListener(type, (e) => {
+        e.preventDefault();
+        events.textContent += `${type} button=${e.button} detail=${e.detail} mods=${mods(e)} at ${e.clientX},${e.clientY}; `;
+      });
+    }
+    pad.addEventListener("mousemove", (e) => {
+      document.getElementById("hovered").textContent = `hovered at ${e.clientX},${e.clientY}`;
+    });
+    const scroller = document.getElementById("scroller");
+    scroller.addEventListener("scroll", () => {
+      document.getElementById("scrolled").textContent = "scrolled: " + scroller.scrollTop;
+    });
+  </script>
+</body>
+</html>
