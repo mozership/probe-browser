@@ -206,7 +206,9 @@ func wheel(tg target, direction string, amount int) (chromedp.Action[chromedp.Vo
 	if amount < 1 {
 		return nil, fmt.Errorf("wheel: the amount is %d, but it is a number of notches, 1 or more", amount)
 	}
-	d := float64(amount * wheelNotch)
+	// In floats, as a large amount times the notch would overflow an int
+	// and turn the wheel the other way.
+	d := float64(amount) * wheelNotch
 	var dx, dy float64
 	switch direction {
 	case "up":
