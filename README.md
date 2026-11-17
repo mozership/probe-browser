@@ -129,7 +129,7 @@ These open a page or hold the step until the page is in the state the next actio
 | `wait_enabled` | Waits until `selector` is visible and enabled |
 | `wait_ready` | Waits until the page's `body` is ready. `selector` is ignored |
 
-Chrome runs with its back-forward cache off, so that `back` and `forward` load the page anew: chromedp does not follow a page the cache restores, and an action on an element of it would wait out its timeout. A page that goes back so loads as a page opened anew does, and runs its scripts again.
+Chrome runs with its back-forward cache off, so that `back` and `forward` to another document load it anew: chromedp does not follow a page the cache restores, and an action on an element of it would wait out its timeout. A page that goes back so loads as a page opened anew does, and runs its scripts again. An entry of the same document, as a fragment such as `#part` or a state a single-page application pushes with `history.pushState`, is not loaded anew: the page stays as it is, as it does for a user.
 
 ### Reading the page
 

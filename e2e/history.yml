@@ -1,7 +1,8 @@
 name: Browser History
 description: |
-  Goes back and forward in the history of the tab, reloads the page, and
-  reads where the tab is with url and title.
+  Goes back and forward in the history of the tab, between pages and in
+  one page, reloads the page, and reads where the tab is with url and
+  title.
   Serve the fixture page first, as e2e/workflow.yml does:
   go run ./e2e/server
 actions:
@@ -46,3 +47,39 @@ jobs:
       res.results.back_title == "Probe Browser Fixture" &&
       res.results.forward_url == vars.url + "/input.html" &&
       res.results.reloaded == "old"
+
+- name: History in one document
+  steps:
+  - name: Go back and forward over a fragment and a pushed state, which load no page
+    uses: browser
+    with:
+      headless: true
+      timeout: 30s
+      actions:
+      - name: navigate
+        url: "{{vars.url}}/history.html"
+      - name: click
+        selector: "#part-link"
+      - name: url
+        id: part
+      - name: back
+      - name: url
+        id: before_part
+      - name: click
+        selector: "#push"
+      - name: back
+      - name: url
+        id: before_push
+      - name: forward
+      - name: url
+        id: pushed
+      - name: text
+        id: loads
+        selector: "#loads"
+    test: |
+      res.code == 0 &&
+      res.results.part == vars.url + "/history.html#part" &&
+      res.results.before_part == vars.url + "/history.html" &&
+      res.results.before_push == vars.url + "/history.html" &&
+      res.results.pushed == vars.url + "/history.html?step=2" &&
+      res.results.loads == "loads: 1"
