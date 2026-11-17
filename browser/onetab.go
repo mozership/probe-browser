@@ -55,9 +55,23 @@ const oneTabScript = `(() => {
 	window.__probeOneTab.on = true;
 })();`
 
-// oneTabOff turns off what oneTabScript installed in the document, if it
-// did.
-const oneTabOff = `(() => { if (window.__probeOneTab) { window.__probeOneTab.on = false; } })()`
+// oneTabOff turns off what oneTabScript installed in the document, and in
+// the frames of it a script of the page can reach, those of its origin.
+const oneTabOff = `(() => {
+	const off = (w) => {
+		try {
+			if (w.__probeOneTab) {
+				w.__probeOneTab.on = false;
+			}
+			for (let i = 0; i < w.frames.length; i++) {
+				off(w.frames[i]);
+			}
+		} catch (e) {
+			// A frame of another origin is out of reach.
+		}
+	};
+	off(window);
+})()`
 
 // oneTab returns an action that keeps the step in one tab: the script runs
 // in every document the tab opens from now on, until done is called, and
