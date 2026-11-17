@@ -440,21 +440,34 @@ func guardRef(ref string, a chromedp.Action[chromedp.Void]) chromedp.Action[chro
 		case serr := <-stale:
 			return chromedp.Void{}, serr
 		default:
-			return chromedp.Void{}, err
 		}
+		// A script that runs once on the element throws for a ref gone
+		// between two checks; the reason reads better than the exception.
+		var e *staleRef
+		if _, cerr := check(ctx, t); errors.As(cerr, &e) {
+			return chromedp.Void{}, cerr
+		}
+		return chromedp.Void{}, err
 	}
 }
 
 // first is a script expression for the first element the target matches,
-// or null.
+// or null, for a script that runs once on it. That of a ref throws for a
+// ref that names no element, so that the script fails with the reason
+// rather than taking the element for one not there yet.
 func (tg target) first() string {
+	if tg.ref != "" {
+		return outline.Element(tg.ref)
+	}
 	return fmt.Sprintf("(%s[0] ?? null)", tg.all())
 }
 
 // path is the target as a chromedp selector, so that chromedp's actions find
 // the element through the script, in shadow roots too, and wait for it.
 func (tg target) path() chromedp.JSPath {
-	return chromedp.JSPath(tg.first())
+	// all gives none for a ref gone, so that the query waits, guardRef
+	// failing it, and wait_not_visible passes.
+	return chromedp.JSPath(fmt.Sprintf("(%s[0] ?? null)", tg.all()))
 }
 
 // opts are the query options of an action on the target, the extra ones

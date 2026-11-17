@@ -1,6 +1,7 @@
 package browser
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -13,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/chromedp/chromedp"
 	"github.com/hashicorp/go-hclog"
 	"github.com/mozership/probe/actionrpc"
 )
@@ -371,5 +373,36 @@ func TestRunStep_ARefGoneWhileWaitedForFails(t *testing.T) {
 	}
 	if d := time.Since(start); d > 10*time.Second {
 		t.Errorf("the click took %s to fail, as long as its timeout", d)
+	}
+}
+
+// TestTarget_ARefGone: a script that runs once on the element of a ref
+// gone fails with the reason, while the query of an action waits, finding
+// none, as wait_not_visible needs.
+func TestTarget_ARefGone(t *testing.T) {
+	if testing.Short() {
+		t.Skip("starts Chrome")
+	}
+	opts := append(chromedp.DefaultExecAllocatorOptions[:], chromedp.NoSandbox, chromedp.Flag("headless", true))
+	allocCtx, allocCancel := chromedp.NewExecAllocator(context.Background(), opts...)
+	defer allocCancel()
+	ctx, cancel := chromedp.NewContext(allocCtx)
+	defer cancel()
+	if err := chromedp.Do(ctx); err != nil {
+		t.Skipf("no Chrome to start: %v", err)
+	}
+	ctx, tcancel := context.WithTimeout(ctx, 20*time.Second)
+	defer tcancel()
+
+	if err := chromedp.Do(ctx, chromedp.Navigate("data:text/html,<p>A page</p>")); err != nil {
+		t.Fatal(err)
+	}
+	tg := target{ref: "ref_abcd1"}
+	_, err := chromedp.Run(ctx, chromedp.Evaluate[chromedp.Void]("("+tg.first()+", undefined)"))
+	if err == nil || !strings.Contains(err.Error(), "ref_abcd1 is not on the page any more") {
+		t.Errorf("a script on a ref gone: %v, want the reason", err)
+	}
+	if err := chromedp.Do(ctx, chromedp.WaitNotPresent(tg.path(), tg.opts()...)); err != nil {
+		t.Errorf("the query of a ref gone found something: %v", err)
 	}
 }
