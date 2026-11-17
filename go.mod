@@ -3,14 +3,19 @@ module github.com/mozership/probe-browser
 go 1.27.1
 
 require (
-	github.com/chromedp/cdproto v0.157.4
-	github.com/chromedp/chromedp v0.19.1
+	github.com/chromedp/cdproto v0.157.8
+	github.com/chromedp/chromedp v0.20.0
+	github.com/chromedp/chromedp/remote v0.2.0
 	github.com/hashicorp/go-hclog v1.6.3
 	github.com/mozership/probe v1.30.0
 )
 
 require (
 	github.com/fatih/color v1.19.0 // indirect
+	github.com/go-json-experiment/json v0.0.0-20260213210345-44df1a37e875 // indirect
+	github.com/gobwas/httphead v0.1.0 // indirect
+	github.com/gobwas/pool v0.2.1 // indirect
+	github.com/gobwas/ws v1.4.0 // indirect
 	github.com/goccy/go-yaml v1.19.2 // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/hashicorp/go-plugin v1.8.0 // indirect

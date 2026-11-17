@@ -17,7 +17,7 @@ Probe only takes a full 40-character commit SHA there. The notes of each [releas
 
 ## Basic Syntax
 
-A browser step lists what to do under the `actions` of its `with`, in order. They are not the `actions` at the top of a workflow, which names the action itself. Every step starts a fresh browser, runs its actions, and closes it, so cookies and a login do not carry over to the next step on their own: put a whole flow in one step, or save the login with `save_storage_state` and start the next step's browser from it, as described in [Carrying a login over](#carrying-a-login-over).
+A browser step lists what to do under the `actions` of its `with`, in order. They are not the `actions` at the top of a workflow, which names the action itself. Every step starts a fresh browser, runs its actions, and closes it, so cookies and a login do not carry over to the next step on their own: put a whole flow in one step, save the login with `save_storage_state` and start the next step's browser from it, as described in [Carrying a login over](#carrying-a-login-over), or keep the browser open for the steps of the job with `session`, as described in [Keeping the browser open](#keeping-the-browser-open).
 
 ```yaml
 steps:
@@ -47,6 +47,7 @@ These go directly under `with`.
 | `evidence_dir` | String | the temporary directory | Where the page is saved when the actions fail. See [Page at failure](#page-at-failure) |
 | `storage_state` | String | none | A file `save_storage_state` wrote, whose cookies and localStorage the browser starts with. See [Carrying a login over](#carrying-a-login-over) |
 | `passkeys` | String | none | A file `save_passkeys` wrote, whose passkeys the virtual authenticator starts with. Without `virtual_authenticator`, it starts one of the defaults. See [Carrying a passkey over](#carrying-a-passkey-over) |
+| `session` | Boolean | `false` | Keep the browser open for the next steps of the job that set it too, which drive the page as this one left it. Probe stops it once the run is over. See [Keeping the browser open](#keeping-the-browser-open) |
 | `virtual_authenticator` | Boolean or map | none | Answer WebAuthn with a virtual authenticator, so that a passkey can be registered and used without a user. See [Signing in with a passkey](#signing-in-with-a-passkey) |
 
 Starting Chrome takes part of `timeout`, often a second or more, so a short limit can run out before the first page opens.
@@ -382,6 +383,39 @@ storage_state: /tmp/probe-browser-passkeys-123.json is not a storage state: it h
 ```
 
 The cookies sign in as the user, so the file is readable only by the user who ran Probe. Without `path` it goes to the temporary directory, which keeps it out of the repository; with `path`, keep it out of version control, and out of the files a CI run uploads.
+
+### Keeping the browser open
+
+A step with `session: true` leaves its browser open, and the next step of the job with `session: true` drives the same tab, with the page, its cookies, its scripts and what was typed into it as the step before left them. The first such step of a job starts the browser, so `headless`, `window_w`, `window_h` and `storage_state` take effect there, and are ignored on the steps after it. A step without `session` starts a fresh browser of its own as before, and leaves the job's alone.
+
+```yaml
+jobs:
+- name: Search
+  steps:
+  - name: Type the query
+    uses: browser
+    with:
+      session: true
+      actions:
+        - name: navigate
+          url: https://example.com/search
+        - name: set_value
+          selector: "#q"
+          value: probe
+  - name: The query is still there
+    uses: browser
+    with:
+      session: true
+      actions:
+        - name: value
+          id: q
+          selector: "#q"
+    test: res.results.q == "probe"
+```
+
+Each job keeps a browser of its own, so jobs that run at the same time do not share a page, and each run of a repeated job starts one anew. A step after the first only attaches to the browser, so it takes a fraction of a second where starting Chrome takes one or more. Probe stops the browsers of a run once it is over, the action's `cleanup` removing their profiles from the cache directory, `probe-browser/sessions` in the user's cache directory, or `$PROBE_BROWSER_CACHE_DIR/sessions` when that is set. A browser that is gone by the next step, as when it crashed, fails that step, which names it.
+
+`session` needs Probe v1.30.0 or later, which tells the action about the job's state and stops what it leaves running; under an earlier one, the step is refused. It does not take `passkeys` or `virtual_authenticator` yet.
 
 ### Signing in with a passkey
 

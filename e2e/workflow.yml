@@ -73,6 +73,25 @@ jobs:
     test: res.code == 0
     echo: "{{res.stdout}}"
 
+  - name: session.yml, which leaves no browser behind
+    uses: shell
+    with:
+      cmd: |
+        dir=$(mktemp -d)
+        PROBE_BROWSER_CACHE_DIR="$dir" probe e2e/session.yml
+        echo "exit=$?"
+        pgrep -f "$dir" >/dev/null && echo browser-left || echo no-browser-left
+        ls -A "$dir/sessions" 2>/dev/null | grep -q . && echo profile-left || echo no-profile-left
+        rm -rf "$dir"
+      timeout: 2m
+      env:
+        DISPLAY: ":99"
+    test: |
+      res.stdout contains "exit=0" &&
+      res.stdout contains "no-browser-left" &&
+      res.stdout contains "no-profile-left"
+    echo: "{{res.stdout}}"
+
   - name: passkey.yml
     uses: shell
     with:
