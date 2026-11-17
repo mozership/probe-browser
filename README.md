@@ -65,7 +65,7 @@ Each entry of `actions` names its action in `name` and takes these fields:
 | `has_text` | actions on an element | Of the elements `selector` matches, or of all without it, take the innermost whose visible text contains this. See [Finding an element](#finding-an-element) |
 | `value` | `type`, `send_keys`, `press`, `set_value`, `select`, `set_user_verified` | The text to use. Of `press`, the key, as `Enter` or `Shift+Tab`. Of `set_user_verified`, `true` or `false` |
 | `attribute` | `get_attribute` | The attribute to read, as `href` or `[href]`. Of a list, only the first entry is read |
-| `quality` | `full_screenshot` | `1` to `99` saves JPEG at that quality. Anything else, including unset, `0`, `100` and above, or a negative number, saves PNG |
+| `quality` | `full_screenshot`, `capture_screenshot` | `1` to `99` saves JPEG at that quality. Anything else, including unset, `0`, `100` and above, or a negative number, saves PNG |
 | `path` | screenshots, `save_storage_state`, `save_passkeys` | Of a screenshot, deprecated: also write the image to this path; use `res.filepaths` instead. Of `save_storage_state` and `save_passkeys`, where to write the file, in place of a new one in the temporary directory |
 | `equals` | `wait_text` | Wait until the text is exactly this. `equals: ""` waits for an empty text |
 | `contains` | `wait_text` | Wait until the text contains this |
@@ -76,6 +76,7 @@ Each entry of `actions` names its action in `name` and takes these fields:
 | `button`, `count`, `modifiers` | `click` | The mouse button, `left`, `middle` or `right`; how many times to click, 1 to 3; the modifiers to hold, a list of `Alt`, `Control`, `Meta` and `Shift` |
 | `direction`, `amount` | `wheel` | Where to turn the wheel, `up`, `down`, `left` or `right`, and how many notches, 3 when unset |
 | `repeat` | `press` | How many times to press the keys, 1 when unset |
+| `x`, `y`, `width`, `height`, `scale` | `capture_screenshot` | The region of the viewport to capture, in CSS pixels from its top left corner, and how many times to enlarge it, 1 to 4 |
 | `filter` | `read_page` | `all` reads the elements shown out of the viewport too, and `interactive` only those of the viewport one can act on. Without it, the elements shown in the viewport |
 | `depth` | `read_page` | How far containers, such as a form or a list, nest in the outline; `15` when unset |
 | `ref` | `read_page`, actions on an element | The ref of an element, as an earlier `read_page` gave it. Of `read_page`, read only that element and what it holds; of an action on an element, the element it acts on, in place of `selector` and `has_text`. See [Finding an element](#finding-an-element) |
@@ -194,7 +195,7 @@ These save an image file and put its path in `res.filepaths`, under `id` or the 
 
 | Action | Image |
 |--------|-------|
-| `capture_screenshot` | The visible part of the window, as PNG |
+| `capture_screenshot` | The visible part of the window, as PNG, or as JPEG when `quality` is `1` to `99`. With `x`, `y`, `width` and `height`, only that region of the viewport, in CSS pixels from its top left corner, enlarged `scale` times, 1 to 4, 1 when unset, as to read small text in it. A region that goes out of the viewport fails the step |
 | `full_screenshot` | The whole page, as PNG, or as JPEG when `quality` is `1` to `99` |
 | `screenshot` | Only `selector`, once it is visible, as PNG |
 

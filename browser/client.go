@@ -182,6 +182,11 @@ type ChromeDPAction struct {
 	Amount    int    `map:"amount"`
 	// Repeat is how many times press presses its keys.
 	Repeat int `map:"repeat"`
+	// Width and Height, with X and Y, are the region of the viewport
+	// capture_screenshot captures, and Scale how much it enlarges it.
+	Width  float64 `map:"width"`
+	Height float64 `map:"height"`
+	Scale  float64 `map:"scale"`
 	// given names which of the text fields the workflow wrote,
 	// since an empty string is otherwise the same as one left out.
 	given      []string
@@ -516,6 +521,9 @@ func (req *Req) buildActionTasks() ([]chromedp.Action[chromedp.Void], error) {
 		if err := action.checkPointer(); err != nil {
 			return nil, err
 		}
+		if _, err := action.regionOf(); err != nil {
+			return nil, err
+		}
 		tg := action.target()
 		if err := action.checkTarget(); err != nil {
 			return nil, err
@@ -597,8 +605,12 @@ func (req *Req) buildActionTasks() ([]chromedp.Action[chromedp.Void], error) {
 			tasks = append(tasks, store(chromedp.FullScreenshot(fullScreenshotQuality(action.Quality)), &buf))
 			action.reBuf = &buf
 		case "capture_screenshot":
+			r, err := action.regionOf()
+			if err != nil {
+				return nil, err
+			}
 			var buf []byte
-			tasks = append(tasks, store(chromedp.CaptureScreenshot(), &buf))
+			tasks = append(tasks, viewportScreenshot(action.Quality, r, &buf))
 			action.reBuf = &buf
 		case "screenshot":
 			var buf []byte
