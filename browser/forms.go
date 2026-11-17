@@ -41,56 +41,98 @@ func outlineCall(fn string, args ...string) string {
 // target, once it is visible, as a user's input does, firing input and
 // change, and keeps what it did in dst: chooses an option of a select by
 // its value or its label, checks or unchecks a checkbox or a radio by
-// true or false, sets the value of an input or a textarea, and the text of
-// a contenteditable element.
+// true or false, and sets the value of an input or a textarea. A
+// contenteditable element, as of a rich text editor, is typed into, as
+// type does, through the editor, which keeps a state of its own that
+// setting its text would leave behind; change follows, as for a field.
+// An element the page takes out between the wait and the setting, as when
+// it renders it anew, is waited for again.
 func formInput(tg target, value string, dst *string) chromedp.Action[chromedp.Void] {
 	// What it did names the field by its ref, or by its selector.
 	name := tg.ref
 	if name == "" {
 		name = tg.String()
 	}
-	fill := chromedp.Evaluate[string](outlineCall("fill", tg.first(), jsString(value), jsString(name)))
+	kind := chromedp.Evaluate[string](fmt.Sprintf(`((el) => !el ? "missing" :
+		(el.isContentEditable && !["INPUT", "TEXTAREA", "SELECT"].includes(el.tagName)) ? "editable" : "field")(%s)`, tg.first()))
+	fill := chromedp.Evaluate[*string](fmt.Sprintf("(() => { %s; const el = %s; return el ? window.__probeOutline.fill(el, %s, %s) : null; })()",
+		outline.Script, tg.first(), jsString(value), jsString(name)))
+	typed := typeText(tg, value)
+	change := chromedp.Evaluate[chromedp.Void](fmt.Sprintf(`((el) => { if (el) el.dispatchEvent(new Event("change", { bubbles: true })); })(%s)`, tg.first()))
 	return func(ctx context.Context, t *chromedp.Target) (chromedp.Void, error) {
-		if _, err := chromedp.WaitVisible(tg.path(), tg.opts()...)(ctx, t); err != nil {
-			return chromedp.Void{}, err
+		for {
+			if _, err := chromedp.WaitVisible(tg.path(), tg.opts()...)(ctx, t); err != nil {
+				return chromedp.Void{}, err
+			}
+			k, err := kind(ctx, t)
+			if err != nil {
+				return chromedp.Void{}, fmt.Errorf("form_input %s: %w", tg, err)
+			}
+			switch k {
+			case "missing":
+				continue
+			case "editable":
+				if _, err := typed(ctx, t); err != nil {
+					return chromedp.Void{}, fmt.Errorf("form_input %s: %w", tg, err)
+				}
+				if _, err := change(ctx, t); err != nil {
+					return chromedp.Void{}, fmt.Errorf("form_input %s: %w", tg, err)
+				}
+				*dst = "Set the text of " + name + "."
+				return chromedp.Void{}, nil
+			}
+			said, err := fill(ctx, t)
+			if err != nil {
+				return chromedp.Void{}, fmt.Errorf("form_input %s: %w", tg, err)
+			}
+			if said == nil {
+				continue
+			}
+			*dst = *said
+			return chromedp.Void{}, nil
 		}
-		said, err := fill(ctx, t)
-		if err != nil {
-			return chromedp.Void{}, fmt.Errorf("form_input %s: %w", tg, err)
-		}
-		*dst = said
-		return chromedp.Void{}, nil
 	}
 }
 
 // describe returns an action that keeps in dst the locator of the target,
 // as JSON, or "" for a point with nothing one can act on, or an element it
-// cannot describe, as one with no role.
+// cannot describe, as one with no role, or one the page hides. An element
+// the page takes out between the wait and the reading is waited for again.
 func describe(tg target, dst *string) chromedp.Action[chromedp.Void] {
-	expr := outlineCall("locatorOf", tg.first())
+	expr := fmt.Sprintf("(() => { %s; const el = %s; return el ? { found: true, locator: window.__probeOutline.locatorOf(el) } : { found: false }; })()",
+		outline.Script, tg.first())
 	if tg.point != nil {
-		expr = outlineCall("locator", "null", fmt.Sprint(tg.point.x), fmt.Sprint(tg.point.y))
+		expr = fmt.Sprintf("(() => { %s; return { found: true, locator: window.__probeOutline.locator(null, %v, %v) }; })()",
+			outline.Script, tg.point.x, tg.point.y)
 	}
-	read := chromedp.Evaluate[*Locator](expr)
+	read := chromedp.Evaluate[struct {
+		Found   bool     `json:"found"`
+		Locator *Locator `json:"locator"`
+	}](expr)
 	return func(ctx context.Context, t *chromedp.Target) (chromedp.Void, error) {
-		if tg.point == nil {
-			if _, err := chromedp.WaitVisible(tg.path(), tg.opts()...)(ctx, t); err != nil {
-				return chromedp.Void{}, err
+		for {
+			if tg.point == nil {
+				if _, err := chromedp.WaitVisible(tg.path(), tg.opts()...)(ctx, t); err != nil {
+					return chromedp.Void{}, err
+				}
 			}
-		}
-		l, err := read(ctx, t)
-		if err != nil {
-			return chromedp.Void{}, fmt.Errorf("locator %s: %w", tg, err)
-		}
-		*dst = ""
-		if l != nil {
-			b, err := json.Marshal(l)
+			got, err := read(ctx, t)
 			if err != nil {
-				return chromedp.Void{}, err
+				return chromedp.Void{}, fmt.Errorf("locator %s: %w", tg, err)
 			}
-			*dst = string(b)
+			if !got.Found {
+				continue
+			}
+			*dst = ""
+			if got.Locator != nil {
+				b, err := json.Marshal(got.Locator)
+				if err != nil {
+					return chromedp.Void{}, err
+				}
+				*dst = string(b)
+			}
+			return chromedp.Void{}, nil
 		}
-		return chromedp.Void{}, nil
 	}
 }
 
