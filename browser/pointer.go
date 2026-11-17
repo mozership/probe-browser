@@ -232,6 +232,14 @@ func wheel(tg target, direction string, amount int) (chromedp.Action[chromedp.Vo
 		if err != nil {
 			return chromedp.Void{}, err
 		}
+		// The mouse comes to the point first, and the page draws a frame,
+		// as a page just loaded can let a wheel go by before it has.
+		if _, err := chromedp.MouseEvent(input.DispatchMouseEventTypeMouseMoved, p.x, p.y)(ctx, t); err != nil {
+			return chromedp.Void{}, err
+		}
+		if _, err := nextFrame(ctx, t); err != nil {
+			return chromedp.Void{}, err
+		}
 		_, err = cdp.Call(ctx, t, dispatchWheel, wheelParams{
 			Type: input.DispatchMouseEventTypeMouseWheel, X: p.x, Y: p.y, DeltaX: dx, DeltaY: dy,
 		})
@@ -250,6 +258,14 @@ type wheelParams struct {
 }
 
 var dispatchWheel = cdp.Command[wheelParams, cdp.Empty]{Method: input.CommandDispatchMouseEvent}
+
+// nextFrame waits for the page to draw two frames, so that what came
+// before is laid out and drawn, or 100 ms, as a tab that is hidden draws
+// none.
+var nextFrame = chromedp.Evaluate[chromedp.Void](`new Promise((resolve) => {
+	setTimeout(resolve, 100);
+	requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+})`, chromedp.EvalAwaitPromise)
 
 // modifierAliases are other names of the modifiers, as a person or a model
 // writes them, beside those of KeyboardEvent.
