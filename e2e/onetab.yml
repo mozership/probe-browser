@@ -1,0 +1,163 @@
+name: Browser One Tab
+description: |
+  Keeps the step in one tab with one_tab, a link and window.open that would
+  open a window opening their page in the tab, and hovers an element of a
+  ref with the mouse.
+  Serve the fixture page first, as e2e/workflow.yml does:
+  go run ./e2e/server
+actions:
+  browser: ./action
+vars:
+  url: "{{ URL ?? 'http://localhost:8090' }}"
+jobs:
+- name: One tab
+  steps:
+  - name: A link to a new window opens in the tab
+    uses: browser
+    with:
+      headless: true
+      one_tab: true
+      timeout: 30s
+      actions:
+      - name: navigate
+        url: "{{vars.url}}/onetab.html"
+      - name: click
+        selector: "#new-window"
+      - name: wait_text
+        selector: h1
+        equals: Probe Browser Fixture
+      - name: url
+        id: url
+    # The server answers /index.html with its directory, /.
+    test: res.code == 0 && res.results.url == vars.url + "/"
+
+  - name: window.open opens in the tab
+    uses: browser
+    with:
+      headless: true
+      one_tab: true
+      timeout: 30s
+      actions:
+      - name: navigate
+        url: "{{vars.url}}/onetab.html"
+      - name: click
+        selector: "#open"
+      - name: wait_text
+        selector: h1
+        equals: Input
+      - name: url
+        id: url
+    test: res.code == 0 && res.results.url == vars.url + "/input.html"
+
+- name: A middle click, and a click the page cancels
+  steps:
+  - name: A middle click on a link opens its page in the tab
+    uses: browser
+    with:
+      headless: true
+      one_tab: true
+      timeout: 30s
+      actions:
+      - name: navigate
+        url: "{{vars.url}}/onetab.html"
+      - name: click
+        selector: "#new-window"
+        button: middle
+      - name: wait_text
+        selector: h1
+        equals: Probe Browser Fixture
+    test: res.code == 0
+
+  - name: A click the page cancels leaves the tab where it is
+    uses: browser
+    with:
+      headless: true
+      one_tab: true
+      timeout: 30s
+      actions:
+      - name: navigate
+        url: "{{vars.url}}/onetab.html"
+      - name: click
+        selector: "#canceled"
+      - name: click
+        selector: "#canceled-late"
+      - name: wait_ready
+      - name: url
+        id: url
+    test: res.code == 0 && res.results.url == vars.url + "/onetab.html"
+
+- name: A link of the base's target
+  steps:
+  - name: A link whose window is the base's opens in the tab
+    uses: browser
+    with:
+      headless: true
+      one_tab: true
+      timeout: 30s
+      actions:
+      - name: navigate
+        url: "{{vars.url}}/onetab-base.html"
+      - name: click
+        selector: "#by-base"
+      - name: wait_text
+        selector: h1
+        equals: Input
+    test: res.code == 0
+
+- name: one_tab is of its step
+  steps:
+  - name: A step keeps to one tab
+    uses: browser
+    with:
+      headless: true
+      session: true
+      one_tab: true
+      timeout: 30s
+      actions:
+      - name: navigate
+        url: "{{vars.url}}/onetab.html"
+    test: res.code == 0
+
+  - name: The next step without one_tab has the page's own windows
+    uses: browser
+    with:
+      session: true
+      timeout: 30s
+      actions:
+      - name: click
+        selector: "#open"
+      - name: wait_ready
+      - name: url
+        id: url
+    test: res.code == 0 && res.results.url == vars.url + "/onetab.html"
+
+- name: Hover a ref
+  steps:
+  - name: Read the button
+    uses: browser
+    with:
+      headless: true
+      session: true
+      timeout: 30s
+      actions:
+      - name: navigate
+        url: "{{vars.url}}/onetab.html"
+      - name: read_page
+        id: outline
+        filter: interactive
+    test: res.code == 0
+    outputs:
+      button: res.results.outline | split("\n") | filter(# startsWith 'button "Hover me"') | first() | split("[") | last() | trimSuffix("]")
+
+  - name: The mouse moves onto the button of the ref
+    uses: browser
+    with:
+      session: true
+      timeout: 30s
+      actions:
+      - name: hover
+        ref: "{{outputs.button}}"
+      - name: text
+        id: entered
+        selector: "#entered"
+    test: res.code == 0 && res.results.entered == "entered"

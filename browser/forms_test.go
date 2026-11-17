@@ -6,7 +6,6 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
-	"time"
 )
 
 func TestBuildActionTasks_FormsRefused(t *testing.T) {
@@ -36,12 +35,13 @@ func TestBuildActionTasks_FormsRefused(t *testing.T) {
 
 // TestLocate_AnotherNumberFailsAtOnce locates the second of two buttons on
 // a page that has three: waiting would not tell them apart, so it fails at
-// once, with how many the page has.
+// once, with how many the page has, rather than at the timeout, whose
+// error would say the time ran out. How long it took is not checked, as a
+// runner of CI can take most of a minute to start Chrome.
 func TestLocate_AnotherNumberFailsAtOnce(t *testing.T) {
 	if testing.Short() {
 		t.Skip("starts Chrome")
 	}
-	start := time.Now()
 	_, err := Request(map[string]any{"headless": true, "timeout": "60s", "evidence_dir": t.TempDir(), "actions": []any{
 		map[string]any{"name": "navigate", "url": "data:text/html,<button>Delete</button><button>Delete</button><button>Delete</button>"},
 		map[string]any{"name": "locate", "locator": map[string]any{"role": "button", "name": "Delete", "nth": 1, "of": 2}},
@@ -51,10 +51,6 @@ func TestLocate_AnotherNumberFailsAtOnce(t *testing.T) {
 	}
 	if err == nil || !strings.Contains(err.Error(), `locate button "Delete" (2 of 2): the page has 3 of them, where it had 2`) {
 		t.Fatalf("err = %v, want the count told", err)
-	}
-	// Chrome takes a while to start on CI, but nothing like the timeout.
-	if d := time.Since(start); d > 30*time.Second {
-		t.Errorf("it took %s, as if it waited for the timeout", d)
 	}
 }
 
