@@ -80,6 +80,22 @@ customElements.define('plain-text', class extends HTMLElement {
 </script>
 </body></html>`
 
+// shellPage slots its main into the shadow root of an app shell, between a
+// header and a footer of the shell's own.
+const shellPage = `<!doctype html>
+<html><head><title>Shell</title></head><body>
+<app-shell><main>Content</main></app-shell>
+<script>
+customElements.define('app-shell', class extends HTMLElement {
+  constructor() {
+    super();
+    this.attachShadow({mode: 'open'}).innerHTML =
+      '<header>Shell header</header><slot></slot><footer>Shell footer</footer>';
+  }
+});
+</script>
+</body></html>`
+
 // startChrome starts Chrome on a page of a test server, and skips the test
 // where there is none to start.
 func startChrome(t *testing.T) context.Context {
@@ -94,6 +110,7 @@ func startChrome(t *testing.T) context.Context {
 	})
 	mux.HandleFunc("/shadow", func(w http.ResponseWriter, r *http.Request) { fmt.Fprint(w, shadowPage) })
 	mux.HandleFunc("/review", func(w http.ResponseWriter, r *http.Request) { fmt.Fprint(w, reviewPage) })
+	mux.HandleFunc("/shell", func(w http.ResponseWriter, r *http.Request) { fmt.Fprint(w, shellPage) })
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 
@@ -312,5 +329,44 @@ func TestText_ReadsAShadowRootAddedSince(t *testing.T) {
 	}
 	if !strings.Contains(text, "Added later") {
 		t.Errorf("the text lacks the shadow root added since the last read:\n%s", text)
+	}
+}
+
+func TestRead_ARefOfAnElementHiddenSinceIsLeftOut(t *testing.T) {
+	ctx := startChrome(t)
+	open(t, ctx, "/")
+	all := read(t, ctx, "", 0, "")
+	button := refOf(t, all, `button "Sign up"`)
+	link := refOf(t, all, `link "Next page"`)
+	hide := `document.querySelector('form').style.opacity = '0';
+	document.querySelector('nav').setAttribute('aria-hidden', 'true');`
+	if _, err := chromedp.Run(ctx, chromedp.Evaluate[chromedp.Void](hide)); err != nil {
+		t.Fatal(err)
+	}
+	for _, ref := range []string{button, link} {
+		if got := read(t, ctx, "", 0, ref); got != "" {
+			t.Errorf("a read of %s, hidden by what holds it: %q, want nothing", ref, got)
+		}
+	}
+	if _, err := chromedp.Run(ctx, chromedp.Evaluate[chromedp.Void](`document.body.setAttribute('aria-hidden', 'true')`)); err != nil {
+		t.Fatal(err)
+	}
+	if got := read(t, ctx, "", 0, ""); got != "" {
+		t.Errorf("a read of a body hidden: %q, want nothing", got)
+	}
+}
+
+func TestText_AroundAMainSlottedIntoAShell(t *testing.T) {
+	ctx := startChrome(t)
+	open(t, ctx, "/shell")
+	text, err := chromedp.Run(ctx, Text())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(text, "Content") || !strings.Contains(text, "Shell header") || !strings.Contains(text, "Shell footer") {
+		t.Errorf("the text is not main, then the shell around it:\n%s", text)
+	}
+	if i, j := strings.Index(text, "Shell header"), strings.Index(text, "Shell footer"); i > j {
+		t.Errorf("the shell is not in the order of the page:\n%s", text)
 	}
 }

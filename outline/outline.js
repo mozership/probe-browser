@@ -382,6 +382,24 @@
     return line;
   };
 
+  // hidesWhatItHolds tells whether el hides itself and what it holds, from
+  // the page or from assistive technology, as visit leaves such an element
+  // out with all it holds.
+  const hidesWhatItHolds = (el) => {
+    if (el.getAttribute('aria-hidden') === 'true') return true;
+    const style = getComputedStyle(el);
+    return style.display === 'none' || style.opacity === '0';
+  };
+
+  // hiddenAbove tells whether an element that holds el in the flat tree
+  // hides it, as a read from the top would leave it out.
+  const hiddenAbove = (el) => {
+    for (let p = parentOf(el); p; p = parentOf(p)) {
+      if (hidesWhatItHolds(p)) return true;
+    }
+    return false;
+  };
+
   const maxChars = 50000;
 
   // read returns the lines of the page: every element shown in the
@@ -421,11 +439,9 @@
     };
 
     const visit = (el, d) => {
-      if (skipped.has(el.tagName) || el.getAttribute('aria-hidden') === 'true') return;
       // Opacity is not inherited, but an element of opacity 0 hides what
       // it holds as it hides itself.
-      const style = getComputedStyle(el);
-      if (style.display === 'none' || style.opacity === '0') return;
+      if (skipped.has(el.tagName) || hidesWhatItHolds(el)) return;
       const role = roleOf(el);
       if (interactive(el, role) || ((role === 'heading' || role === 'img') && !onlyInteractive)) {
         if (visible(el)) push(d, describe(el, role) + ' [' + refOf(el) + ']');
@@ -456,8 +472,9 @@
     };
 
     if (ref) {
-      visit(byRef(ref), 0);
-    } else if (document.body) {
+      const el = byRef(ref);
+      if (!hiddenAbove(el)) visit(el, 0);
+    } else if (document.body && !hiddenAbove(document.body) && !hidesWhatItHolds(document.body)) {
       walk(document.body, 0);
     }
     if (truncated) out.push('[The page is longer than ' + maxChars + ' characters and was cut here; read less of it with depth or ref.]');
@@ -543,8 +560,10 @@
 
   // around gives the texts of what is around el up to the body, in the
   // order of the page, el itself left out: those of the nodes beside it,
-  // then of those beside what holds it, and so on, a shadow root's going
-  // on with its host's.
+  // then of those beside what holds it, and so on, as the flat tree holds
+  // them: a node slotted into a slot is beside the other nodes of the slot,
+  // and in the shadow root around it, and a shadow root goes on with its
+  // host.
   const around = (el, flat) => {
     const before = [];
     const after = [];
@@ -556,13 +575,21 @@
     };
     let node = el;
     while (node && node !== document.body) {
-      const parent = node.parentNode;
-      if (!parent) break;
-      const siblings = Array.from(parent.childNodes);
+      let siblings;
+      let up;
+      if (node.assignedSlot) {
+        siblings = node.assignedSlot.assignedNodes();
+        up = node.assignedSlot;
+      } else {
+        const parent = node.parentNode;
+        if (!parent) break;
+        siblings = Array.from(parent.childNodes);
+        up = parent instanceof ShadowRoot ? parent.host : parent;
+      }
       const i = siblings.indexOf(node);
       before.unshift(...siblings.slice(0, i).map(of).filter(Boolean));
       after.push(...siblings.slice(i + 1).map(of).filter(Boolean));
-      node = parent instanceof ShadowRoot ? parent.host : parent;
+      node = up;
     }
     return before.concat(after);
   };
