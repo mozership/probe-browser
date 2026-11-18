@@ -192,14 +192,16 @@ func record(ctx context.Context, job recorderJob) error {
 }
 
 // oneTabPoll is how often the recorder looks whether the steps keep
-// one_tab on.
-const oneTabPoll = 50 * time.Millisecond
+// one_tab on: a look is no more than the file's metadata, as the
+// recorder runs on a machine the test shares, as with a simulator.
+const oneTabPoll = 100 * time.Millisecond
 
 // keepOneTab has one_tab's script run in every document the tab opens
 // while the file of dir says the steps keep it on, as between the steps of
 // a job that has it, which leave the tab.
 func keepOneTab(ctx context.Context, dir string) {
 	var id page.ScriptIdentifier
+	said := ""
 	tick := time.NewTicker(oneTabPoll)
 	defer tick.Stop()
 	for {
@@ -215,11 +217,14 @@ func keepOneTab(ctx context.Context, dir string) {
 				id = ""
 			}
 		}
+		// What it keeps is written when it changes alone.
 		st := "off"
 		if id != "" {
 			st = "on"
 		}
-		_ = os.WriteFile(filepath.Join(dir, oneTabState), []byte(st), 0o600)
+		if st != said && os.WriteFile(filepath.Join(dir, oneTabState), []byte(st), 0o600) == nil {
+			said = st
+		}
 		select {
 		case <-ctx.Done():
 			return
