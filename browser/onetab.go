@@ -157,15 +157,27 @@ func (req *Req) keepOneTab(ctx context.Context, t *chromedp.Target, recorder str
 	}
 	// A document the step opens is not to have it, so the recorder is
 	// waited for to have taken its script away.
-	deadline := time.Now().Add(oneTabWait)
-	for time.Now().Before(deadline) {
-		if b, err := os.ReadFile(filepath.Join(dir, oneTabState)); err == nil && string(b) == "off" {
-			break
-		}
-		time.Sleep(10 * time.Millisecond)
+	if !waitOneTabState(dir, "off") {
+		return errors.New("the recorder of the browser did not turn one_tab off")
 	}
 	_, err := oneTabDone("")(ctx, t)
 	return err
+}
+
+// waitOneTabState waits for the recorder whose profile is dir to say it
+// keeps one_tab as state, "on" or "off", oneTabWait at most, and returns
+// whether it did.
+func waitOneTabState(dir, state string) bool {
+	deadline := time.Now().Add(oneTabWait)
+	for {
+		if b, err := os.ReadFile(filepath.Join(dir, oneTabState)); err == nil && string(b) == state {
+			return true
+		}
+		if !time.Now().Before(deadline) {
+			return false
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 }
 
 // oneTabWait bounds waiting for the recorder to turn one_tab off.
@@ -182,7 +194,9 @@ func (req *Req) oneTabAfter(ctx context.Context, recorded bool) {
 	}
 	switch {
 	case recorded && req.OneTab:
-		if req.oneTabScript != "" {
+		// The step's own script is given up once the recorder keeps one
+		// of its own; else it goes with the step.
+		if req.oneTabScript != "" && waitOneTabState(filepath.Dir(req.recorderPath()), "on") {
 			_ = req.browserRunner.Run(ctx, func(ctx context.Context, t *chromedp.Target) (chromedp.Void, error) {
 				_, err := chromedp.Call(ctx, page.RemoveScriptToEvaluateOnNewDocument, page.RemoveScriptToEvaluateOnNewDocumentParams{Identifier: req.oneTabScript})
 				return chromedp.Void{}, err

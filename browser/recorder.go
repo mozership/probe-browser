@@ -222,7 +222,7 @@ func keepOneTab(ctx context.Context, dir string) {
 // this executable in a group of its own, which the runner stops once the
 // run is over, and waits for it to connect. It returns the file it
 // writes.
-func startRecorder(s *session, processes *actionrpc.Processes) (string, error) {
+func startRecorder(s *session, processes *actionrpc.Processes, deadline time.Time) (string, error) {
 	exe, err := os.Executable()
 	if err != nil {
 		return "", err
@@ -255,8 +255,14 @@ func startRecorder(s *session, processes *actionrpc.Processes) (string, error) {
 	}
 	processes.Add(actionrpc.Process{PID: pid})
 	path := filepath.Join(s.Dir, recorderFile)
-	deadline := time.Now().Add(recorderReady)
-	for time.Now().Before(deadline) {
+	// A third of what is left of the step at most, so that a step whose
+	// recorder does not come has the rest to go on without one.
+	wait := recorderReady
+	if !deadline.IsZero() {
+		wait = min(wait, time.Until(deadline)/3)
+	}
+	until := time.Now().Add(wait)
+	for time.Now().Before(until) {
 		if b, err := os.ReadFile(path); err == nil && bytes.Contains(b, []byte(`"k":"`+lineReady+`"`)) {
 			return path, nil
 		}
@@ -426,13 +432,15 @@ func (t *recordedTail) requests(pending []pendingRequest) ([]NetworkError, Reque
 // syncedOffset returns where in the file of the recorder what comes from
 // now on begins: once the page's mark is in, and the requests are quiet,
 // so that what came before, as of the setting up of the step, is left out.
-func syncedOffset(ctx context.Context, path string, run func(context.Context, ...chromedp.Action[chromedp.Void]) error) int64 {
+func syncedOffset(ctx context.Context, path string, run func(context.Context, ...chromedp.Action[chromedp.Void]) error) (int64, bool) {
 	st, err := os.Stat(path)
 	if err != nil {
-		return 0
+		return 0, false
 	}
 	t := newRecordedTail(path, st.Size())
-	t.recordedMark(ctx, run)
+	if !t.recordedMark(ctx, run) {
+		return 0, false
+	}
 	t.settle(time.Now().Add(networkDrain))
-	return t.offset
+	return t.offset, true
 }

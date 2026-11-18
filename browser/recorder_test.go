@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -28,7 +29,8 @@ func recorderPage(t *testing.T) *httptest.Server {
 		default:
 			fmt.Fprint(w, `<!doctype html><title>t</title><link rel="icon" href="data:,"><p id="out">none</p>
 <button id="later" onclick="setTimeout(() => { fetch('/api'); console.error('late error'); }, 300)">Later</button>
-<button id="pop" onclick="setTimeout(() => window.open('/other'), 300)">Pop</button>`)
+<button id="pop" onclick="setTimeout(() => window.open('/other'), 300)">Pop</button>
+<button id="now" onclick="fetch('/api'); console.error('now error')">Now</button>`)
 		}
 	}))
 	t.Cleanup(srv.Close)
@@ -141,4 +143,47 @@ func TestRecorder_OneTabBetweenTheSteps(t *testing.T) {
 	if got := fmt.Sprint(res["results"]); strings.Contains(got, "/other") {
 		t.Errorf("results %s, want the tab where it was, one_tab off", got)
 	}
+}
+
+// TestRecorder_Gone has the steps record while they run once the recorder
+// is gone, rather than report a page with no errors.
+func TestRecorder_Gone(t *testing.T) {
+	if testing.Short() {
+		t.Skip("starts Chrome")
+	}
+	srv := recorderPage(t)
+	step := keptSteps(t, "gone")
+	mustStep(t, step, nil, map[string]any{"name": "navigate", "url": srv.URL})
+	matches, _ := filepath.Glob(filepath.Join(os.Getenv(CacheDirEnv), "sessions", "*", "browser-*", recorderPIDFile))
+	if len(matches) != 1 {
+		t.Fatalf("recorder PID files %v, want one", matches)
+	}
+	b, err := os.ReadFile(matches[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	pid, _ := strconv.Atoi(string(b))
+	stopGroup(pid, filepath.Dir(matches[0]))
+
+	if !waitGone(pid) {
+		t.Fatalf("the recorder %d did not stop", pid)
+	}
+	res := mustStep(t, step, nil, map[string]any{"name": "click", "selector": "#now"})
+	if !strings.Contains(fmt.Sprint(res["console_errors"]), "now error") || !strings.Contains(fmt.Sprint(res["network_errors"]), "/api") {
+		t.Errorf("console errors %v, network errors %v, want those of the click, recorded by the step", res["console_errors"], res["network_errors"])
+	}
+	res = mustStep(t, step, nil, map[string]any{"name": "click", "selector": "#now"})
+	if !strings.Contains(fmt.Sprint(res["console_errors"]), "now error") {
+		t.Errorf("console errors %v of the step after, want the click's", res["console_errors"])
+	}
+}
+
+func waitGone(pid int) bool {
+	for range 50 {
+		if !alive(pid) {
+			return true
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	return false
 }

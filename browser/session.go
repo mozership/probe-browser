@@ -71,6 +71,16 @@ type sessionCall struct {
 	offset, offsetOut int64
 }
 
+// dropRecorder leaves the recorder of the browser out of the state the
+// step leaves, as it is gone.
+func (sc *sessionCall) dropRecorder() {
+	for _, s := range []*session{sc.kept, sc.started} {
+		if s != nil {
+			s.Recorder = ""
+		}
+	}
+}
+
 // offsetFromState reads where in the file of the recorder the step before
 // stopped reading, as the state of the job names it.
 func offsetFromState(state map[string]any) int64 {
@@ -238,7 +248,8 @@ func (req *Req) startSession(base context.Context) (context.Context, context.Can
 	s := &session{WSURL: wsURL, TargetID: string(c.Target.TargetID), Dir: profile}
 	// Without a recorder, the steps record while they run, and what comes
 	// between them is read from the page's timings.
-	if path, err := startRecorder(s, req.session.processes); err == nil {
+	deadline, _ := base.Deadline()
+	if path, err := startRecorder(s, req.session.processes, deadline.Add(-evidenceGrace)); err == nil {
 		s.Recorder = path
 	} else {
 		req.debugLog("the recorder of the browser did not start: %v", err)

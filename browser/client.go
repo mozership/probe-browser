@@ -952,13 +952,28 @@ func (req *Req) do() (*Result, error) {
 			if recorder != "" {
 				// A step that attaches goes on from where the one before
 				// stopped, what came between them included; one that
-				// starts the browser, from once it is set up.
-				offset := req.session.offset
-				if !req.attaches() {
-					offset = syncedOffset(ctx, recorder, req.browserRunner.Run)
+				// starts the browser, from once it is set up. The page's
+				// mark coming back tells the recorder is there.
+				var ok bool
+				if req.attaches() {
+					tail = newRecordedTail(recorder, req.session.offset)
+					ok = tail.recordedMark(ctx, req.browserRunner.Run)
+				} else {
+					var offset int64
+					offset, ok = syncedOffset(ctx, recorder, req.browserRunner.Run)
+					tail = newRecordedTail(recorder, offset)
 				}
-				tail = newRecordedTail(recorder, offset)
-				return chromedp.Void{}, req.keepOneTab(ctx, t, recorder)
+				if ok {
+					return chromedp.Void{}, req.keepOneTab(ctx, t, recorder)
+				}
+				// A recorder that is gone leaves the step, and those after
+				// it, to record while they run.
+				req.debugLog("the recorder of the browser is gone; the steps record while they run")
+				tail, recorder = nil, ""
+				req.session.dropRecorder()
+				if c, ok := req.browserRunner.(consoleReader); ok {
+					console = recordConsole(browserCtx, c.Console)
+				}
 			}
 			net = recordNetwork(browserCtx, pending, since)
 			if net == nil || !req.Session {
