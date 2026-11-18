@@ -325,3 +325,23 @@ func TestPending_AnEndBeforeItsResponse(t *testing.T) {
 		t.Errorf("count %d, errors %v, pending %+v; want it counted once, of no status", none.requests.Count, none.errs, none.pending())
 	}
 }
+
+// TestPending_AFailureBeforeItWasSent leaves a request whose failure came
+// before it was seen sent to the next step once, which reports it once it
+// sees it sent.
+func TestPending_AFailureBeforeItWasSent(t *testing.T) {
+	s := newRequestSet()
+	event(t, s, network.LoadingFailed.Method, `{"requestId":"f","timestamp":2,"errorText":"net::ERR_CONNECTION_REFUSED"}`)
+	s.settle()
+	p := s.pending()
+	if s.requests.Count != 0 || len(p) != 1 || !p[0].Failed || p[0].Error != "net::ERR_CONNECTION_REFUSED" {
+		t.Fatalf("count %d, pending %+v; want the failure left", s.requests.Count, p)
+	}
+	next := newRequestSet()
+	next.carry(p)
+	event(t, next, network.RequestWillBeSent.Method, `{"requestId":"f","timestamp":1,"wallTime":1000,"request":{"url":"https://a/down","method":"GET"}}`)
+	next.settle()
+	if fmt.Sprint(next.errs) != "[GET https://a/down net::ERR_CONNECTION_REFUSED]" || len(next.pending()) != 0 {
+		t.Errorf("errors %v, pending %+v", next.errs, next.pending())
+	}
+}

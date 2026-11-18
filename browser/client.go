@@ -1028,16 +1028,15 @@ func (req *Req) do() (*Result, error) {
 		networkErrors, requests, pending = tail.requests(req.session.pending)
 	} else {
 		consoleErrors = console.stop(browserCtx, req.browserRunner.Run)
-		networkErrors, requests, pending, stopped = net.stop(timings, deadline)
 		if unread != nil {
-			errs, reqs, _ := unread.requests(nil)
-			consoleErrors = append(unread.consoleErrors(), consoleErrors...)
-			networkErrors = append(errs, networkErrors...)
-			requests.Count += reqs.Count
-			for _, r := range reqs.Slowest {
-				requests.Slowest = slowest(requests.Slowest, r)
+			// What the recorder wrote before it went comes before what the
+			// step saw, put together with it.
+			if net != nil {
+				net.before = unread.events
 			}
+			consoleErrors = append(unread.consoleErrors(), consoleErrors...)
 		}
+		networkErrors, requests, pending, stopped = net.stop(timings, deadline)
 	}
 	if err != nil {
 		return nil, req.withEvidence(browserCtx, withNetworkErrors(withConsoleErrors(err, consoleErrors), networkErrors))

@@ -118,6 +118,11 @@ func record(ctx context.Context, job recorderJob) error {
 		return err
 	}
 	defer f.Close()
+	// A line it cannot write ends the recorder, so that the steps, which
+	// find it gone, record while they run, rather than read a file that
+	// lacks what it lost.
+	ctx, failed := context.WithCancelCause(ctx)
+	defer failed(nil)
 	var mu sync.Mutex
 	write := func(l recordedLine) {
 		b, err := json.Marshal(l)
@@ -128,7 +133,9 @@ func record(ctx context.Context, job recorderJob) error {
 		defer mu.Unlock()
 		// One write a line, so that a reader never sees half of one but
 		// at the end.
-		_, _ = f.Write(append(b, '\n'))
+		if _, err := f.Write(append(b, '\n')); err != nil {
+			failed(fmt.Errorf("writing what the page does: %w", err))
+		}
 	}
 
 	allocCtx, allocCancel := remote.NewAllocator(ctx, job.WSURL, remote.NoModifyURL)
@@ -178,6 +185,9 @@ func record(ctx context.Context, job recorderJob) error {
 	}
 	tabCancel()
 	wg.Wait()
+	if err := context.Cause(ctx); !errors.Is(err, context.Canceled) {
+		return err
+	}
 	return ctx.Err()
 }
 

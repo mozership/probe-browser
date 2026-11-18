@@ -570,8 +570,12 @@ func TestRunStep_ARequestAnsweredBetweenTheSteps(t *testing.T) {
 			if n := strings.Count(errs, "/signup"); n != 1 || !strings.Contains(errs, "500") {
 				t.Errorf("network errors %s, want the sign-up's 500 once", errs)
 			}
-			if p := pendingFromState(state); len(p) != 0 {
-				t.Errorf("pending %+v after it ended", p)
+			// The browser's own, as a failure of its cache of no URL, can
+			// be left for a step; the sign-up is not.
+			for _, p := range pendingFromState(state) {
+				if strings.Contains(p.URL, "/signup") {
+					t.Errorf("pending %+v after it ended", p)
+				}
 			}
 		})
 	}

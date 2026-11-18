@@ -112,6 +112,9 @@ type networkRecorder struct {
 	mu     sync.Mutex
 	// events are those of each method, in the order they came.
 	events map[string][]jsonv2.Value
+	// before are events that came before it began, of each method, which
+	// are taken first, as those a recorder that went wrote.
+	before map[string][]jsonv2.Value
 	// last is when the last event came.
 	last time.Time
 	// inflight are the requests of HTTP or HTTPS sent while it records,
@@ -172,6 +175,11 @@ type pendingRequest struct {
 	// Ended is when it ended, of one whose other events had not come by
 	// the time the step stopped, as each method's come apart.
 	Ended float64 `json:"ended,omitempty"`
+	// Failed, Canceled and Error are of one whose failure came before it
+	// was seen sent.
+	Failed   bool   `json:"failed,omitempty"`
+	Canceled bool   `json:"canceled,omitempty"`
+	Error    string `json:"error,omitempty"`
 }
 
 // maxPending bounds the requests a step leaves to the next, the latest
@@ -403,6 +411,7 @@ func (s *requestSet) carry(pending []pendingRequest) {
 	for _, p := range pending {
 		q := s.of(network.RequestID(p.ID))
 		q.method, q.url, q.sent, q.status, q.gotResponse, q.wall, q.firstURL, q.ended = p.Method, p.URL, p.Sent, p.Status, p.Response, p.Wall, p.FirstURL, p.Ended
+		q.failed, q.canceled, q.errText = p.Failed, p.Canceled, p.Error
 		q.carried = true
 		q.notHTTP = !isHTTP(q.url)
 	}
@@ -463,7 +472,7 @@ func (r *networkRecorder) stop(timings func() *pageTimings, deadline time.Time) 
 	// The events of each method are taken in turn, all of one before the
 	// next, in the order of networkMethods.
 	for _, m := range networkMethods {
-		for _, raw := range r.events[m] {
+		for _, raw := range append(r.before[m], r.events[m]...) {
 			_ = set.apply(m, raw)
 		}
 	}
@@ -492,7 +501,7 @@ func (s *requestSet) pending() []pendingRequest {
 			// One that ended but whose other events had not come, as each
 			// method's come apart, is left once, for the next step to
 			// count when they do.
-			if q.carried || q.failed {
+			if q.carried {
 				continue
 			}
 		} else if q.sent == 0 && !(q.gotResponse && q.url != "") {
@@ -500,7 +509,7 @@ func (s *requestSet) pending() []pendingRequest {
 			// too, for the next to time it once it ends.
 			continue
 		}
-		out = append(out, pendingRequest{ID: string(id), Method: q.method, URL: q.url, Sent: q.sent, Status: q.status, Response: q.gotResponse, Wall: q.wall, FirstURL: q.firstURL, Ended: q.ended})
+		out = append(out, pendingRequest{ID: string(id), Method: q.method, URL: q.url, Sent: q.sent, Status: q.status, Response: q.gotResponse, Wall: q.wall, FirstURL: q.firstURL, Ended: q.ended, Failed: q.failed, Canceled: q.canceled, Error: q.errText})
 	}
 	slices.SortStableFunc(out, func(a, b pendingRequest) int { return cmp.Compare(a.Sent, b.Sent) })
 	return out[max(0, len(out)-maxPending):]
