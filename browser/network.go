@@ -392,6 +392,16 @@ func slowest(list []SlowRequest, req SlowRequest) []SlowRequest {
 	return list[:min(len(list), maxSlowest)]
 }
 
+// carry goes on with the requests pending a step before left.
+func (s *requestSet) carry(pending []pendingRequest) {
+	for _, p := range pending {
+		q := s.of(network.RequestID(p.ID))
+		q.method, q.url, q.sent, q.status, q.gotResponse, q.wall, q.firstURL = p.Method, p.URL, p.Sent, p.Status, p.Response, p.Wall, p.FirstURL
+		q.carried = true
+		q.notHTTP = !isHTTP(q.url)
+	}
+}
+
 // stop ends the recording and returns the requests: those that ended by
 // then, as the events of what the actions did came before the end mark of
 // the console, which is read first, on the same connection, and those of
@@ -412,12 +422,7 @@ func (r *networkRecorder) stop(timings func() *pageTimings, deadline time.Time) 
 	if r == nil {
 		return set.errs, set.requests, nil, 0
 	}
-	for _, p := range r.pending {
-		q := set.of(network.RequestID(p.ID))
-		q.method, q.url, q.sent, q.status, q.gotResponse, q.wall, q.firstURL = p.Method, p.URL, p.Sent, p.Status, p.Response, p.Wall, p.FirstURL
-		q.carried = true
-		q.notHTTP = !isHTTP(q.url)
-	}
+	set.carry(r.pending)
 	// A request sent while it waits for the quiet, as one a timer of the
 	// last action sends, is waited for too, within networkSettle.
 	settle := time.Now().Add(networkSettle)

@@ -33,7 +33,7 @@ func (a *Action) RunStep(call actionrpc.Call) (map[string]any, map[string]any, e
 		if err != nil {
 			return nil, nil, err
 		}
-		sc = &sessionCall{runID: call.Step.RunID, kept: kept, processes: call.Processes, pending: pendingFromState(call.State), stopped: stoppedFromState(call.State)}
+		sc = &sessionCall{runID: call.Step.RunID, kept: kept, processes: call.Processes, pending: pendingFromState(call.State), stopped: stoppedFromState(call.State), offset: offsetFromState(call.State)}
 	}
 	ret, err := a.run(call.With, sc)
 	if sc == nil {
@@ -50,10 +50,10 @@ func (a *Action) RunStep(call actionrpc.Call) (map[string]any, map[string]any, e
 	}
 	switch {
 	case sc.started != nil:
-		return ret, sc.started.stateWith(sc.pendingOut, sc.stoppedOut), nil
+		return ret, sc.started.stateWith(sc.pendingOut, sc.stoppedOut, sc.offsetOut), nil
 	case sc.used && sc.kept != nil:
 		// The browser is the one kept; the requests pending are of now.
-		return ret, sc.kept.stateWith(sc.pendingOut, sc.stoppedOut), nil
+		return ret, sc.kept.stateWith(sc.pendingOut, sc.stoppedOut, sc.offsetOut), nil
 	}
 	return ret, nil, nil
 }
