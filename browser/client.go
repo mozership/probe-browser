@@ -8,6 +8,7 @@ import (
 	"iter"
 	"maps"
 	"os"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -933,7 +934,9 @@ func (req *Req) do() (*Result, error) {
 	// runs and between the steps; without one, the step records it while
 	// it runs.
 	recorder := req.recorderPath()
-	var tail *recordedTail
+	// unread is what the recorder of a browser whose recorder is gone
+	// wrote before it went, which the step reports besides its own.
+	var tail, unread *recordedTail
 	var console *consoleRecorder
 	var net *networkRecorder
 	if c, ok := req.browserRunner.(consoleReader); ok && recorder == "" {
@@ -952,25 +955,28 @@ func (req *Req) do() (*Result, error) {
 			if recorder != "" {
 				// A step that attaches goes on from where the one before
 				// stopped, what came between them included; one that
-				// starts the browser, from once it is set up. The page's
-				// mark coming back tells the recorder is there.
-				var ok bool
+				// starts the browser, from once it is set up.
 				if req.attaches() {
 					tail = newRecordedTail(recorder, req.session.offset)
-					ok = tail.recordedMark(ctx, req.browserRunner.Run)
 				} else {
-					var offset int64
-					offset, ok = syncedOffset(ctx, recorder, req.browserRunner.Run)
+					offset, _ := syncedOffset(ctx, recorder, req.browserRunner.Run)
 					tail = newRecordedTail(recorder, offset)
 				}
-				if ok {
+				if recorderAlive(filepath.Dir(recorder)) {
 					return chromedp.Void{}, req.keepOneTab(ctx, t, recorder)
 				}
 				// A recorder that is gone leaves the step, and those after
-				// it, to record while they run.
+				// it, to record while they run; what it wrote before it
+				// went is the step's too. Its one_tab script went with it.
 				req.debugLog("the recorder of the browser is gone; the steps record while they run")
-				tail, recorder = nil, ""
+				_ = tail.read()
+				unread, tail, recorder = tail, nil, ""
 				req.session.dropRecorder()
+				if !req.OneTab && req.attaches() {
+					if _, err := oneTabDone("")(ctx, t); err != nil {
+						return chromedp.Void{}, err
+					}
+				}
 				if c, ok := req.browserRunner.(consoleReader); ok {
 					console = recordConsole(browserCtx, c.Console)
 				}
@@ -1023,6 +1029,15 @@ func (req *Req) do() (*Result, error) {
 	} else {
 		consoleErrors = console.stop(browserCtx, req.browserRunner.Run)
 		networkErrors, requests, pending, stopped = net.stop(timings, deadline)
+		if unread != nil {
+			errs, reqs, _ := unread.requests(nil)
+			consoleErrors = append(unread.consoleErrors(), consoleErrors...)
+			networkErrors = append(errs, networkErrors...)
+			requests.Count += reqs.Count
+			for _, r := range reqs.Slowest {
+				requests.Slowest = slowest(requests.Slowest, r)
+			}
+		}
 	}
 	if err != nil {
 		return nil, req.withEvidence(browserCtx, withNetworkErrors(withConsoleErrors(err, consoleErrors), networkErrors))

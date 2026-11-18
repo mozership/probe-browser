@@ -176,7 +176,7 @@ type pendingRequest struct {
 
 // maxPending bounds the requests a step leaves to the next, the latest
 // sent kept, for a page whose requests never end, as a stream.
-const maxPending = 100
+const maxPending = 1000
 
 // recordNetwork starts keeping the events of the requests of the tab of
 // ctx until stop, going on with the requests pending an earlier step of a

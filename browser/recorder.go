@@ -275,6 +275,17 @@ func startRecorder(s *session, processes *actionrpc.Processes, deadline time.Tim
 	return "", fmt.Errorf("the recorder of the browser did not connect")
 }
 
+// recorderAlive reports whether the recorder of the browser whose profile
+// is dir runs, as its PID file names it.
+func recorderAlive(dir string) bool {
+	b, err := os.ReadFile(filepath.Join(dir, recorderPIDFile))
+	if err != nil {
+		return false
+	}
+	pid, err := strconv.Atoi(string(b))
+	return err == nil && alive(pid) && runsProfile(pid, dir)
+}
+
 // recordedTail reads what the recorder wrote from an offset of its file,
 // a whole line at a time, as it goes on.
 type recordedTail struct {

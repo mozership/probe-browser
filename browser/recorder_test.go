@@ -146,14 +146,18 @@ func TestRecorder_OneTabBetweenTheSteps(t *testing.T) {
 }
 
 // TestRecorder_Gone has the steps record while they run once the recorder
-// is gone, rather than report a page with no errors.
+// is gone, rather than report a page with no errors, and report what it
+// wrote before it went.
 func TestRecorder_Gone(t *testing.T) {
 	if testing.Short() {
 		t.Skip("starts Chrome")
 	}
 	srv := recorderPage(t)
 	step := keptSteps(t, "gone")
-	mustStep(t, step, nil, map[string]any{"name": "navigate", "url": srv.URL})
+	// What the page does once the step has ended, which the recorder
+	// writes before it goes.
+	mustStep(t, step, nil, map[string]any{"name": "navigate", "url": srv.URL}, map[string]any{"name": "click", "selector": "#later"})
+	time.Sleep(time.Second)
 	matches, _ := filepath.Glob(filepath.Join(os.Getenv(CacheDirEnv), "sessions", "*", "browser-*", recorderPIDFile))
 	if len(matches) != 1 {
 		t.Fatalf("recorder PID files %v, want one", matches)
@@ -169,8 +173,8 @@ func TestRecorder_Gone(t *testing.T) {
 		t.Fatalf("the recorder %d did not stop", pid)
 	}
 	res := mustStep(t, step, nil, map[string]any{"name": "click", "selector": "#now"})
-	if !strings.Contains(fmt.Sprint(res["console_errors"]), "now error") || !strings.Contains(fmt.Sprint(res["network_errors"]), "/api") {
-		t.Errorf("console errors %v, network errors %v, want those of the click, recorded by the step", res["console_errors"], res["network_errors"])
+	if c := fmt.Sprint(res["console_errors"]); !strings.Contains(c, "now error") || !strings.Contains(c, "late error") || strings.Count(fmt.Sprint(res["network_errors"]), "/api") != 2 {
+		t.Errorf("console errors %v, network errors %v, want those the recorder wrote, and those of the click, recorded by the step", res["console_errors"], res["network_errors"])
 	}
 	res = mustStep(t, step, nil, map[string]any{"name": "click", "selector": "#now"})
 	if !strings.Contains(fmt.Sprint(res["console_errors"]), "now error") {
