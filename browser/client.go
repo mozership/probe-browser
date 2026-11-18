@@ -1024,6 +1024,12 @@ func (req *Req) do() (*Result, error) {
 		// comes before, then the requests to end.
 		tail.recordedMark(browserCtx, req.browserRunner.Run)
 		tail.settle(deadline)
+		// A recorder that went while the step ran wrote only some of it,
+		// so the step fails; the next goes on from where the step began,
+		// what it wrote included, and records while it runs.
+		if !recorderAlive(filepath.Dir(recorder)) && err == nil {
+			err = errors.New("the recorder of the browser stopped while the step ran, so what the page did is not whole")
+		}
 		consoleErrors = tail.consoleErrors()
 		networkErrors, requests, pending = tail.requests(req.session.pending)
 	} else {

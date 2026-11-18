@@ -191,3 +191,34 @@ func waitGone(pid int) bool {
 	}
 	return false
 }
+
+// TestRecorder_GoneWhileTheStepRan fails a step whose recorder went while
+// it ran, and the step after reports what it wrote.
+func TestRecorder_GoneWhileTheStepRan(t *testing.T) {
+	if testing.Short() {
+		t.Skip("starts Chrome")
+	}
+	srv := recorderPage(t)
+	step := keptSteps(t, "gonewhile")
+	mustStep(t, step, nil, map[string]any{"name": "navigate", "url": srv.URL})
+	matches, _ := filepath.Glob(filepath.Join(os.Getenv(CacheDirEnv), "sessions", "*", "browser-*", recorderPIDFile))
+	if len(matches) != 1 {
+		t.Fatalf("recorder PID files %v, want one", matches)
+	}
+	b, _ := os.ReadFile(matches[0])
+	pid, _ := strconv.Atoi(string(b))
+	// The recorder goes while the step waits for a text that comes after
+	// the click's error.
+	go func() {
+		time.Sleep(time.Second)
+		stopGroup(pid, filepath.Dir(matches[0]))
+	}()
+	_, err := step(map[string]any{"timeout": "3s"}, map[string]any{"name": "click", "selector": "#now"}, map[string]any{"name": "wait_visible", "selector": "#never"})
+	if err == nil {
+		t.Fatal("the step passed with its recorder gone")
+	}
+	res := mustStep(t, step, nil, map[string]any{"name": "title"})
+	if !strings.Contains(fmt.Sprint(res["console_errors"]), "now error") {
+		t.Errorf("console errors %v, want the click's, which the recorder wrote", res["console_errors"])
+	}
+}
