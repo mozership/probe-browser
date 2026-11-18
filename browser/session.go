@@ -42,6 +42,9 @@ type session struct {
 	TargetID string `json:"target_id"`
 	// Dir is the profile of the browser, which Cleanup removes.
 	Dir string `json:"dir"`
+	// Recorder is the file its recorder writes, empty for a browser that
+	// has none, as when it did not start.
+	Recorder string `json:"recorder,omitempty"`
 }
 
 // sessionCall is what a step that keeps its browser is given by the runner:
@@ -63,6 +66,33 @@ type sessionCall struct {
 	// when the step does, for the next, in milliseconds of the Unix
 	// epoch, 0 when not known.
 	stopped, stoppedOut float64
+	// offset is where in the file of the recorder the step before stopped
+	// reading, and offsetOut where the step does, for the next.
+	offset, offsetOut int64
+}
+
+// dropRecorder leaves the recorder of the browser out of the state the
+// step leaves, as it is gone.
+func (sc *sessionCall) dropRecorder() {
+	for _, s := range []*session{sc.kept, sc.started} {
+		if s != nil {
+			s.Recorder = ""
+		}
+	}
+}
+
+// offsetFromState reads where in the file of the recorder the step before
+// stopped reading, as the state of the job names it.
+func offsetFromState(state map[string]any) int64 {
+	switch v := state["recorder_offset"].(type) {
+	case float64:
+		return int64(v)
+	case int64:
+		return v
+	case int:
+		return int64(v)
+	}
+	return 0
 }
 
 // stoppedFromState reads when the step before stopped recording, as the
@@ -99,7 +129,7 @@ func pendingFromState(state map[string]any) []pendingRequest {
 
 // stateWith returns the state of the job that names s, the requests
 // pending, and when the step stopped recording, when known.
-func (s *session) stateWith(pending []pendingRequest, stopped float64) map[string]any {
+func (s *session) stateWith(pending []pendingRequest, stopped float64, offset int64) map[string]any {
 	state := s.state()
 	list := make([]any, len(pending))
 	for i, p := range pending {
@@ -111,6 +141,9 @@ func (s *session) stateWith(pending []pendingRequest, stopped float64) map[strin
 	state["pending"] = list
 	if stopped > 0 {
 		state["network_stopped"] = stopped
+	}
+	if s.Recorder != "" {
+		state["recorder_offset"] = offset
 	}
 	return state
 }
@@ -142,6 +175,7 @@ func (s *session) state() map[string]any {
 		"ws_url":    s.WSURL,
 		"target_id": s.TargetID,
 		"dir":       s.Dir,
+		"recorder":  s.Recorder,
 	}}
 }
 
@@ -211,7 +245,16 @@ func (req *Req) startSession(base context.Context) (context.Context, context.Can
 		req.session.processes.Add(actionrpc.Process{PID: p.Pid})
 	}
 	wsURL, _ := chromedp.KeptOpen(ctx)
-	req.session.started = &session{WSURL: wsURL, TargetID: string(c.Target.TargetID), Dir: profile}
+	s := &session{WSURL: wsURL, TargetID: string(c.Target.TargetID), Dir: profile}
+	// Without a recorder, the steps record while they run, and what comes
+	// between them is read from the page's timings.
+	deadline, _ := base.Deadline()
+	if path, err := startRecorder(s, req.session.processes, deadline.Add(-evidenceGrace)); err == nil {
+		s.Recorder = path
+	} else {
+		req.debugLog("the recorder of the browser did not start: %v", err)
+	}
+	req.session.started = s
 	return ctx, cancelFunc, nil
 }
 
@@ -264,9 +307,11 @@ func cleanupSessions(runID string) error {
 // whose step was stopped before it wrote the file.
 func stopProfile(profile string) {
 	groups := profileGroups(profile)
-	if b, err := os.ReadFile(filepath.Join(profile, pidFile)); err == nil {
-		if pid, err := strconv.Atoi(string(b)); err == nil {
-			groups = append(groups, pid)
+	for _, f := range []string{pidFile, recorderPIDFile} {
+		if b, err := os.ReadFile(filepath.Join(profile, f)); err == nil {
+			if pid, err := strconv.Atoi(string(b)); err == nil {
+				groups = append(groups, pid)
+			}
 		}
 	}
 	for _, g := range groups {

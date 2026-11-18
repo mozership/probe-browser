@@ -3,11 +3,20 @@
 // github.com/mozership/probe-browser@<commit>.
 package main
 
-import "github.com/mozership/probe-browser/browser"
+import (
+	"os"
+
+	"github.com/mozership/probe-browser/browser"
+)
 
 // version is set at build time.
 var version = "dev"
 
 func main() {
+	// A kept browser's recorder is this executable, started by the step
+	// that starts the browser.
+	if browser.IsRecorder() {
+		os.Exit(browser.RunRecorder())
+	}
 	browser.Serve()
 }

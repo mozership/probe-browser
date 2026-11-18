@@ -8,6 +8,7 @@ import (
 	"iter"
 	"maps"
 	"os"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -416,6 +417,28 @@ func (req *Req) debugf() chromedp.ContextOption {
 			req.cb.withInBrowser(s, i)
 		}
 	})
+}
+
+// recorderPath returns the file the recorder of the kept browser of the
+// step writes, empty for a step of no kept browser, or of one with no
+// recorder.
+func (req *Req) recorderPath() string {
+	switch {
+	case !req.Session || req.session == nil:
+		return ""
+	case req.attaches():
+		return req.session.kept.Recorder
+	case req.session.started != nil:
+		return req.session.started.Recorder
+	}
+	return ""
+}
+
+// debugLog writes a record of the step, as the browser's are written.
+func (req *Req) debugLog(format string, args ...any) {
+	if req.cb != nil && req.cb.withInBrowser != nil {
+		req.cb.withInBrowser(format, args...)
+	}
 }
 
 // attaches reports whether the step drives the browser an earlier step of
@@ -907,9 +930,16 @@ func (req *Req) do() (*Result, error) {
 	}
 	defer cancel()
 
+	// A kept browser's recorder tells what the page does, while the step
+	// runs and between the steps; without one, the step records it while
+	// it runs.
+	recorder := req.recorderPath()
+	// unread is what the recorder of a browser whose recorder is gone
+	// wrote before it went, which the step reports besides its own.
+	var tail, unread *recordedTail
 	var console *consoleRecorder
 	var net *networkRecorder
-	if c, ok := req.browserRunner.(consoleReader); ok {
+	if c, ok := req.browserRunner.(consoleReader); ok && recorder == "" {
 		console = recordConsole(browserCtx, c.Console)
 	}
 	// Only of a browser of chromedp: on another context, as of a mock, the
@@ -922,6 +952,35 @@ func (req *Req) do() (*Result, error) {
 			pending, since = req.session.pending, req.session.stopped
 		}
 		start := func(ctx context.Context, t *chromedp.Target) (chromedp.Void, error) {
+			if recorder != "" {
+				// A step that attaches goes on from where the one before
+				// stopped, what came between them included; one that
+				// starts the browser, from once it is set up.
+				if req.attaches() {
+					tail = newRecordedTail(recorder, req.session.offset)
+				} else {
+					offset, _ := syncedOffset(ctx, recorder, req.browserRunner.Run)
+					tail = newRecordedTail(recorder, offset)
+				}
+				if recorderAlive(filepath.Dir(recorder)) {
+					return chromedp.Void{}, req.keepOneTab(ctx, t, recorder)
+				}
+				// A recorder that is gone leaves the step, and those after
+				// it, to record while they run; what it wrote before it
+				// went is the step's too. Its one_tab script went with it.
+				req.debugLog("the recorder of the browser is gone; the steps record while they run")
+				_ = tail.read()
+				unread, tail, recorder = tail, nil, ""
+				req.session.dropRecorder()
+				if !req.OneTab && req.attaches() {
+					if _, err := oneTabDone("")(ctx, t); err != nil {
+						return chromedp.Void{}, err
+					}
+				}
+				if c, ok := req.browserRunner.(consoleReader); ok {
+					console = recordConsole(browserCtx, c.Console)
+				}
+			}
 			net = recordNetwork(browserCtx, pending, since)
 			if net == nil || !req.Session {
 				return chromedp.Void{}, nil
@@ -941,13 +1000,9 @@ func (req *Req) do() (*Result, error) {
 	defer actionsCancel()
 
 	err = req.browserRunner.Run(ctx, tasks...)
-	// one_tab is of the step: in a kept browser, a step after it without
-	// one_tab has the page's own windows.
-	if req.Session && (req.OneTab || req.attaches()) {
-		_ = req.browserRunner.Run(browserCtx, oneTabDone(req.oneTabScript))
-	}
-	// The page's timings are read of a kept browser, whose steps leave
-	// what ends between them.
+	req.oneTabAfter(browserCtx, tail != nil)
+	// The page's timings are read of a kept browser with no recorder,
+	// whose steps leave what ends between them.
 	var timings func() *pageTimings
 	if req.Session {
 		timings = func() *pageTimings {
@@ -959,15 +1014,44 @@ func (req *Req) do() (*Result, error) {
 			return got
 		}
 	}
-	if err != nil {
-		errs := console.stop(browserCtx, req.browserRunner.Run)
-		netErrs, _, _, _ := net.stop(timings, deadline)
-		return nil, req.withEvidence(browserCtx, withNetworkErrors(withConsoleErrors(err, errs), netErrs))
+	var consoleErrors []ConsoleError
+	var networkErrors []NetworkError
+	var requests Requests
+	var pending []pendingRequest
+	var stopped float64
+	if tail != nil {
+		// The mark first, which every message of the console before it
+		// comes before, then the requests to end.
+		tail.recordedMark(browserCtx, req.browserRunner.Run)
+		tail.settle(deadline)
+		// A recorder that went while the step ran wrote only some of it,
+		// so the step fails; the next goes on from where the step began,
+		// what it wrote included, and records while it runs.
+		if !recorderAlive(filepath.Dir(recorder)) && err == nil {
+			err = errors.New("the recorder of the browser stopped while the step ran, so what the page did is not whole")
+		}
+		consoleErrors = tail.consoleErrors()
+		networkErrors, requests, pending = tail.requests(req.session.pending)
+	} else {
+		consoleErrors = console.stop(browserCtx, req.browserRunner.Run)
+		if unread != nil {
+			// What the recorder wrote before it went comes before what the
+			// step saw, put together with it.
+			if net != nil {
+				net.before = unread.events
+			}
+			consoleErrors = append(unread.consoleErrors(), consoleErrors...)
+		}
+		networkErrors, requests, pending, stopped = net.stop(timings, deadline)
 	}
-	consoleErrors := console.stop(browserCtx, req.browserRunner.Run)
-	networkErrors, requests, pending, stopped := net.stop(timings, deadline)
+	if err != nil {
+		return nil, req.withEvidence(browserCtx, withNetworkErrors(withConsoleErrors(err, consoleErrors), networkErrors))
+	}
 	if req.Session && req.session != nil {
 		req.session.used, req.session.pendingOut, req.session.stoppedOut = true, pending, stopped
+		if tail != nil {
+			req.session.offsetOut = tail.offset
+		}
 	}
 
 	results, filePaths, err := req.collectResults()

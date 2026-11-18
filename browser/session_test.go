@@ -139,10 +139,14 @@ func TestRunStep_KeepsTheBrowser(t *testing.T) {
 		t.Fatalf("the first step left no browser: %v, %v", state, err)
 	}
 	t.Cleanup(func() { _ = cleanupSessions(run) })
-	if got := procs.List(); len(got) != 1 || got[0].PID <= 0 {
-		t.Fatalf("processes = %v, want the browser", got)
+	// The browser, and its recorder.
+	if got := procs.List(); len(got) != 2 || got[0].PID <= 0 || got[1].PID <= 0 {
+		t.Fatalf("processes = %v, want the browser and its recorder", got)
 	}
-	pid := procs.List()[0].PID
+	if kept.Recorder == "" {
+		t.Fatalf("the browser has no recorder: %+v", kept)
+	}
+	pid, recorder := procs.List()[0].PID, procs.List()[1].PID
 
 	ret, state2, err := call(state, map[string]any{"name": "value", "id": "q", "selector": "#q"})
 	if err != nil {
@@ -162,6 +166,9 @@ func TestRunStep_KeepsTheBrowser(t *testing.T) {
 	}
 	if alive(pid) {
 		t.Errorf("the browser %d is still running after the cleanup", pid)
+	}
+	if alive(recorder) {
+		t.Errorf("the recorder %d is still running after the cleanup", recorder)
 	}
 	if _, err := os.Stat(kept.Dir); !os.IsNotExist(err) {
 		t.Errorf("the profile %s is still there: %v", kept.Dir, err)
@@ -563,8 +570,12 @@ func TestRunStep_ARequestAnsweredBetweenTheSteps(t *testing.T) {
 			if n := strings.Count(errs, "/signup"); n != 1 || !strings.Contains(errs, "500") {
 				t.Errorf("network errors %s, want the sign-up's 500 once", errs)
 			}
-			if p := pendingFromState(state); len(p) != 0 {
-				t.Errorf("pending %+v after it ended", p)
+			// The browser's own, as a failure of its cache of no URL, can
+			// be left for a step; the sign-up is not.
+			for _, p := range pendingFromState(state) {
+				if strings.Contains(p.URL, "/signup") {
+					t.Errorf("pending %+v after it ended", p)
+				}
 			}
 		})
 	}

@@ -100,6 +100,8 @@ type netRequest struct {
 	// gone is a carried request that ended unseen with the document it
 	// was of, which is neither counted nor carried on.
 	gone bool
+	// counted is one settle counted.
+	counted bool
 }
 
 // networkRecorder keeps the events of the requests of the page from when
@@ -110,6 +112,9 @@ type networkRecorder struct {
 	mu     sync.Mutex
 	// events are those of each method, in the order they came.
 	events map[string][]jsonv2.Value
+	// before are events that came before it began, of each method, which
+	// are taken first, as those a recorder that went wrote.
+	before map[string][]jsonv2.Value
 	// last is when the last event came.
 	last time.Time
 	// inflight are the requests of HTTP or HTTPS sent while it records,
@@ -167,11 +172,19 @@ type pendingRequest struct {
 	// FirstURL the URL it was asked for, before any redirect.
 	Wall     float64 `json:"wall,omitempty"`
 	FirstURL string  `json:"first_url,omitempty"`
+	// Ended is when it ended, of one whose other events had not come by
+	// the time the step stopped, as each method's come apart.
+	Ended float64 `json:"ended,omitempty"`
+	// Failed, Canceled and Error are of one whose failure came before it
+	// was seen sent.
+	Failed   bool   `json:"failed,omitempty"`
+	Canceled bool   `json:"canceled,omitempty"`
+	Error    string `json:"error,omitempty"`
 }
 
 // maxPending bounds the requests a step leaves to the next, the latest
 // sent kept, for a page whose requests never end, as a stream.
-const maxPending = 100
+const maxPending = 1000
 
 // recordNetwork starts keeping the events of the requests of the tab of
 // ctx until stop, going on with the requests pending an earlier step of a
@@ -354,6 +367,7 @@ func (s *requestSet) settle() {
 			continue
 		}
 		s.requests.Count++
+		q.counted = true
 		switch {
 		case q.failed && !q.canceled:
 			s.errs = append(s.errs, NetworkError{Method: q.method, URL: q.url, Status: q.status, Error: q.errText})
@@ -392,6 +406,17 @@ func slowest(list []SlowRequest, req SlowRequest) []SlowRequest {
 	return list[:min(len(list), maxSlowest)]
 }
 
+// carry goes on with the requests pending a step before left.
+func (s *requestSet) carry(pending []pendingRequest) {
+	for _, p := range pending {
+		q := s.of(network.RequestID(p.ID))
+		q.method, q.url, q.sent, q.status, q.gotResponse, q.wall, q.firstURL, q.ended = p.Method, p.URL, p.Sent, p.Status, p.Response, p.Wall, p.FirstURL, p.Ended
+		q.failed, q.canceled, q.errText = p.Failed, p.Canceled, p.Error
+		q.carried = true
+		q.notHTTP = !isHTTP(q.url)
+	}
+}
+
 // stop ends the recording and returns the requests: those that ended by
 // then, as the events of what the actions did came before the end mark of
 // the console, which is read first, on the same connection, and those of
@@ -412,12 +437,7 @@ func (r *networkRecorder) stop(timings func() *pageTimings, deadline time.Time) 
 	if r == nil {
 		return set.errs, set.requests, nil, 0
 	}
-	for _, p := range r.pending {
-		q := set.of(network.RequestID(p.ID))
-		q.method, q.url, q.sent, q.status, q.gotResponse, q.wall, q.firstURL = p.Method, p.URL, p.Sent, p.Status, p.Response, p.Wall, p.FirstURL
-		q.carried = true
-		q.notHTTP = !isHTTP(q.url)
-	}
+	set.carry(r.pending)
 	// A request sent while it waits for the quiet, as one a timer of the
 	// last action sends, is waited for too, within networkSettle.
 	settle := time.Now().Add(networkSettle)
@@ -452,7 +472,7 @@ func (r *networkRecorder) stop(timings func() *pageTimings, deadline time.Time) 
 	// The events of each method are taken in turn, all of one before the
 	// next, in the order of networkMethods.
 	for _, m := range networkMethods {
-		for _, raw := range r.events[m] {
+		for _, raw := range append(r.before[m], r.events[m]...) {
 			_ = set.apply(m, raw)
 		}
 	}
@@ -474,12 +494,22 @@ func (s *requestSet) pending() []pendingRequest {
 	var out []pendingRequest
 	for _, id := range s.order {
 		q := s.byID[id]
-		// One this step saw the response of, and not sent, is left too,
-		// for the next to time it once it ends.
-		if q.gone || (q.sent == 0 && !(q.gotResponse && q.url != "")) || q.ended != 0 || q.notHTTP {
+		if q.gone || q.counted || q.notHTTP {
 			continue
 		}
-		out = append(out, pendingRequest{ID: string(id), Method: q.method, URL: q.url, Sent: q.sent, Status: q.status, Response: q.gotResponse, Wall: q.wall, FirstURL: q.firstURL})
+		if q.ended != 0 {
+			// One that ended but whose other events had not come, as each
+			// method's come apart, is left once, for the next step to
+			// count when they do.
+			if q.carried {
+				continue
+			}
+		} else if q.sent == 0 && !(q.gotResponse && q.url != "") {
+			// One this step saw the response of, and not sent, is left
+			// too, for the next to time it once it ends.
+			continue
+		}
+		out = append(out, pendingRequest{ID: string(id), Method: q.method, URL: q.url, Sent: q.sent, Status: q.status, Response: q.gotResponse, Wall: q.wall, FirstURL: q.firstURL, Ended: q.ended, Failed: q.failed, Canceled: q.canceled, Error: q.errText})
 	}
 	slices.SortStableFunc(out, func(a, b pendingRequest) int { return cmp.Compare(a.Sent, b.Sent) })
 	return out[max(0, len(out)-maxPending):]

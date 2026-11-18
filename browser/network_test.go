@@ -295,3 +295,53 @@ func TestStop_NotPastTheDeadline(t *testing.T) {
 		t.Errorf("stop took %s, want 300ms, the deadline", d)
 	}
 }
+
+// TestPending_AnEndBeforeItsResponse leaves a request whose end came
+// before its response, as each method's events come apart, to the next
+// step once, which counts it with the response, or without when none
+// comes.
+func TestPending_AnEndBeforeItsResponse(t *testing.T) {
+	s := newRequestSet()
+	event(t, s, network.RequestWillBeSent.Method, `{"requestId":"a","timestamp":1,"wallTime":1000,"request":{"url":"https://a/api","method":"POST"}}`)
+	event(t, s, network.LoadingFinished.Method, `{"requestId":"a","timestamp":2}`)
+	s.settle()
+	p := s.pending()
+	if s.requests.Count != 0 || len(p) != 1 || p[0].Ended != 2 {
+		t.Fatalf("count %d, pending %+v; want it left, ended", s.requests.Count, p)
+	}
+
+	next := newRequestSet()
+	next.carry(p)
+	event(t, next, network.ResponseReceived.Method, `{"requestId":"a","response":{"url":"https://a/api","status":500}}`)
+	next.settle()
+	if fmt.Sprint(next.errs) != "[POST https://a/api 500]" || len(next.pending()) != 0 {
+		t.Errorf("errors %v, pending %+v; want the 500, none left", next.errs, next.pending())
+	}
+
+	none := newRequestSet()
+	none.carry(p)
+	none.settle()
+	if none.requests.Count != 1 || len(none.errs) != 0 || len(none.pending()) != 0 {
+		t.Errorf("count %d, errors %v, pending %+v; want it counted once, of no status", none.requests.Count, none.errs, none.pending())
+	}
+}
+
+// TestPending_AFailureBeforeItWasSent leaves a request whose failure came
+// before it was seen sent to the next step once, which reports it once it
+// sees it sent.
+func TestPending_AFailureBeforeItWasSent(t *testing.T) {
+	s := newRequestSet()
+	event(t, s, network.LoadingFailed.Method, `{"requestId":"f","timestamp":2,"errorText":"net::ERR_CONNECTION_REFUSED"}`)
+	s.settle()
+	p := s.pending()
+	if s.requests.Count != 0 || len(p) != 1 || !p[0].Failed || p[0].Error != "net::ERR_CONNECTION_REFUSED" {
+		t.Fatalf("count %d, pending %+v; want the failure left", s.requests.Count, p)
+	}
+	next := newRequestSet()
+	next.carry(p)
+	event(t, next, network.RequestWillBeSent.Method, `{"requestId":"f","timestamp":1,"wallTime":1000,"request":{"url":"https://a/down","method":"GET"}}`)
+	next.settle()
+	if fmt.Sprint(next.errs) != "[GET https://a/down net::ERR_CONNECTION_REFUSED]" || len(next.pending()) != 0 {
+		t.Errorf("errors %v, pending %+v", next.errs, next.pending())
+	}
+}
