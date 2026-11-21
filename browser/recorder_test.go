@@ -2,6 +2,7 @@ package browser
 
 import (
 	"fmt"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -50,9 +51,7 @@ func keptSteps(t *testing.T, name string) func(with map[string]any, actions ...a
 	return func(with map[string]any, actions ...any) (map[string]any, error) {
 		t.Helper()
 		w := map[string]any{"session": true, "headless": true, "timeout": "30s", "evidence_dir": t.TempDir(), "actions": actions}
-		for k, v := range with {
-			w[k] = v
-		}
+		maps.Copy(w, with)
 		ret, next, err := a.RunStep(actionrpc.Call{
 			With: w, State: state, Step: actionrpc.Step{RunID: run},
 			Cleanups: &actionrpc.Cleanups{}, Processes: &actionrpc.Processes{},
