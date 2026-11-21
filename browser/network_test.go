@@ -204,7 +204,7 @@ func TestDo_NoRequestOfTheStorageState(t *testing.T) {
 		t.Skip("starts Chrome")
 	}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprint(w, `<!doctype html><title>t</title><link rel="icon" href="data:,"><p>page</p>`)
+		_, _ = fmt.Fprint(w, `<!doctype html><title>t</title><link rel="icon" href="data:,"><p>page</p>`)
 	}))
 	defer srv.Close()
 	state := filepath.Join(t.TempDir(), "state.json")

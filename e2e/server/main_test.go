@@ -28,7 +28,7 @@ func TestHandler(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		defer res.Body.Close()
+		defer func() { _ = res.Body.Close() }()
 		body, _ := io.ReadAll(res.Body)
 		return string(body)
 	}
@@ -44,7 +44,7 @@ func TestHandler(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		res.Body.Close()
+		_ = res.Body.Close()
 		cookies := res.Cookies()
 		if len(cookies) != 1 || cookies[0].Name != "sid" || cookies[0].Value != "s-7" || !cookies[0].HttpOnly {
 			t.Fatalf("cookies = %v, want sid=s-7 HttpOnly", cookies)

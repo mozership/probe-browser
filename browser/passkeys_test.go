@@ -84,7 +84,7 @@ func TestWritePasskeys_Shape(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	defer os.Remove(path)
+	defer func() { _ = os.Remove(path) }()
 
 	if !strings.HasPrefix(filepath.Base(path), "probe-browser-passkeys-") {
 		t.Errorf("path = %s, want a probe-browser-passkeys-*.json", path)

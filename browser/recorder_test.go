@@ -2,6 +2,7 @@ package browser
 
 import (
 	"fmt"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -25,9 +26,9 @@ func recorderPage(t *testing.T) *httptest.Server {
 		case "/api":
 			http.Error(w, "boom", http.StatusInternalServerError)
 		case "/other":
-			fmt.Fprint(w, `<!doctype html><title>o</title><link rel="icon" href="data:,"><p id="o">other</p>`)
+			_, _ = fmt.Fprint(w, `<!doctype html><title>o</title><link rel="icon" href="data:,"><p id="o">other</p>`)
 		default:
-			fmt.Fprint(w, `<!doctype html><title>t</title><link rel="icon" href="data:,"><p id="out">none</p>
+			_, _ = fmt.Fprint(w, `<!doctype html><title>t</title><link rel="icon" href="data:,"><p id="out">none</p>
 <button id="later" onclick="setTimeout(() => { fetch('/api'); console.error('late error'); }, 300)">Later</button>
 <button id="pop" onclick="setTimeout(() => window.open('/other'), 300)">Pop</button>
 <button id="now" onclick="fetch('/api'); console.error('now error')">Now</button>`)
@@ -50,9 +51,7 @@ func keptSteps(t *testing.T, name string) func(with map[string]any, actions ...a
 	return func(with map[string]any, actions ...any) (map[string]any, error) {
 		t.Helper()
 		w := map[string]any{"session": true, "headless": true, "timeout": "30s", "evidence_dir": t.TempDir(), "actions": actions}
-		for k, v := range with {
-			w[k] = v
-		}
+		maps.Copy(w, with)
 		ret, next, err := a.RunStep(actionrpc.Call{
 			With: w, State: state, Step: actionrpc.Step{RunID: run},
 			Cleanups: &actionrpc.Cleanups{}, Processes: &actionrpc.Processes{},

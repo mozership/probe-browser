@@ -104,13 +104,13 @@ func startChrome(t *testing.T) context.Context {
 		t.Skip("starts Chrome")
 	}
 	mux := http.NewServeMux()
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) { fmt.Fprint(w, formPage) })
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) { _, _ = fmt.Fprint(w, formPage) })
 	mux.HandleFunc("/next", func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprint(w, `<!doctype html><title>Next</title><h1>Second page</h1>`)
+		_, _ = fmt.Fprint(w, `<!doctype html><title>Next</title><h1>Second page</h1>`)
 	})
-	mux.HandleFunc("/shadow", func(w http.ResponseWriter, r *http.Request) { fmt.Fprint(w, shadowPage) })
-	mux.HandleFunc("/review", func(w http.ResponseWriter, r *http.Request) { fmt.Fprint(w, reviewPage) })
-	mux.HandleFunc("/shell", func(w http.ResponseWriter, r *http.Request) { fmt.Fprint(w, shellPage) })
+	mux.HandleFunc("/shadow", func(w http.ResponseWriter, r *http.Request) { _, _ = fmt.Fprint(w, shadowPage) })
+	mux.HandleFunc("/review", func(w http.ResponseWriter, r *http.Request) { _, _ = fmt.Fprint(w, reviewPage) })
+	mux.HandleFunc("/shell", func(w http.ResponseWriter, r *http.Request) { _, _ = fmt.Fprint(w, shellPage) })
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 
@@ -149,7 +149,7 @@ func read(t *testing.T, ctx context.Context, filter string, depth int, ref strin
 func refOf(t *testing.T, lines, pattern string) string {
 	t.Helper()
 	re := regexp.MustCompile(regexp.QuoteMeta(pattern) + `.*\[(ref_[a-z]{4}\d+)\]`)
-	for _, line := range strings.Split(lines, "\n") {
+	for line := range strings.SplitSeq(lines, "\n") {
 		if m := re.FindStringSubmatch(line); m != nil {
 			return m[1]
 		}

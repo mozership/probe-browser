@@ -47,10 +47,10 @@ func handler(dir string) http.Handler {
 	mux.HandleFunc("GET /whoami", func(w http.ResponseWriter, r *http.Request) {
 		c, err := r.Cookie("sid")
 		if err != nil {
-			fmt.Fprint(w, "nobody")
+			_, _ = fmt.Fprint(w, "nobody")
 			return
 		}
-		fmt.Fprint(w, c.Value)
+		_, _ = fmt.Fprint(w, c.Value)
 	})
 	// /broken answers 500, and /slow answers after 300 milliseconds, for
 	// the requests the browser records.
@@ -59,7 +59,7 @@ func handler(dir string) http.Handler {
 	})
 	mux.HandleFunc("GET /slow", func(w http.ResponseWriter, r *http.Request) {
 		time.Sleep(300 * time.Millisecond)
-		fmt.Fprint(w, "slow")
+		_, _ = fmt.Fprint(w, "slow")
 	})
 	return logged(mux)
 }

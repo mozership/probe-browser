@@ -81,7 +81,7 @@ func TestForms_WhatIsEasyToGetWrong(t *testing.T) {
 	if testing.Short() {
 		t.Skip("starts Chrome")
 	}
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { fmt.Fprint(w, reviewFormsPage) }))
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { _, _ = fmt.Fprint(w, reviewFormsPage) }))
 	defer srv.Close()
 	run := func(actions ...any) (map[string]string, error) {
 		ret, err := Request(map[string]any{"headless": true, "timeout": "30s", "evidence_dir": t.TempDir(),
