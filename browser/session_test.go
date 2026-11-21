@@ -104,7 +104,7 @@ func TestRunStep_KeepsTheBrowser(t *testing.T) {
 	}
 	t.Setenv(CacheDirEnv, t.TempDir())
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprint(w, `<!doctype html><title>t</title><h1>Kept</h1><input id="q" value="old">`)
+		_, _ = fmt.Fprint(w, `<!doctype html><title>t</title><h1>Kept</h1><input id="q" value="old">`)
 	}))
 	defer srv.Close()
 
@@ -243,7 +243,7 @@ func startGroup(t *testing.T, script string, exit bool, args ...string) int {
 	t.Cleanup(func() {
 		_ = syscall.Kill(-pid, syscall.SIGKILL)
 		select {
-		case <-done:
+		case <-done: //nolint:errcheck // the shell is killed: only its exit is waited for
 		case <-time.After(5 * time.Second):
 		}
 	})
@@ -333,7 +333,7 @@ func TestRunStep_ARefGoneWhileWaitedForFails(t *testing.T) {
 	}
 	t.Setenv(CacheDirEnv, t.TempDir())
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprint(w, `<!doctype html><title>t</title>
+		_, _ = fmt.Fprint(w, `<!doctype html><title>t</title>
 <button id="b">Go</button>
 <button id="hider" onclick="b.style.display='none'; setTimeout(() => b.remove(), 1000)">Hide</button>
 <button id="self" onclick="this.remove()">Close</button>`)
@@ -438,12 +438,12 @@ func TestRunStep_GoesOnWithARequestPending(t *testing.T) {
 			// It takes a while yet, so that its time is known to be more
 			// than the step's own.
 			time.Sleep(300 * time.Millisecond)
-			fmt.Fprint(w, "slow")
+			_, _ = fmt.Fprint(w, "slow")
 		case "/release":
 			once.Do(func() { close(release) })
-			fmt.Fprint(w, "released")
+			_, _ = fmt.Fprint(w, "released")
 		default:
-			fmt.Fprint(w, `<!doctype html><title>t</title><link rel="icon" href="data:,"><p id="out">none</p>
+			_, _ = fmt.Fprint(w, `<!doctype html><title>t</title><link rel="icon" href="data:,"><p id="out">none</p>
 <button id="go" onclick="fetch('/slow').then((r) => r.text()).then((t) => document.getElementById('out').textContent = t)">Go</button>
 <button id="release" onclick="fetch('/release')">Release</button>`)
 		}
@@ -532,7 +532,7 @@ func TestRunStep_ARequestAnsweredBetweenTheSteps(t *testing.T) {
 					http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 					return
 				}
-				fmt.Fprintf(w, `<!doctype html><title>t</title><link rel="icon" href="data:,">
+				_, _ = fmt.Fprintf(w, `<!doctype html><title>t</title><link rel="icon" href="data:,">
 <form method="post" action="/signup"><button id="go" type="button" onclick="%s">Sign up</button></form>`, tc.submit)
 			}))
 			defer srv.Close()

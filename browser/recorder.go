@@ -117,7 +117,7 @@ func record(ctx context.Context, job recorderJob) error {
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	// A line it cannot write ends the recorder, so that the steps, which
 	// find it gone, record while they run, rather than read a file that
 	// lacks what it lost.
@@ -250,7 +250,7 @@ func startRecorder(s *session, processes *actionrpc.Processes, deadline time.Tim
 	if err != nil {
 		return "", err
 	}
-	defer logFile.Close()
+	defer func() { _ = logFile.Close() }()
 	// The profile on its command line, as on the browser's, by which
 	// Cleanup finds it.
 	cmd := exec.Command(exe, "record", "--user-data-dir="+s.Dir)
@@ -326,7 +326,7 @@ func (t *recordedTail) read() error {
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	if _, err := f.Seek(t.offset, 0); err != nil {
 		return err
 	}

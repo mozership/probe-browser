@@ -504,7 +504,7 @@ func (s *requestSet) pending() []pendingRequest {
 			if q.carried {
 				continue
 			}
-		} else if q.sent == 0 && !(q.gotResponse && q.url != "") {
+		} else if q.sent == 0 && (!q.gotResponse || q.url == "") {
 			// One this step saw the response of, and not sent, is left
 			// too, for the next to time it once it ends.
 			continue

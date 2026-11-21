@@ -10,7 +10,7 @@ import (
 )
 
 // version is set at build time.
-var version = "dev"
+var version = "dev" //nolint:unused // set by -X main.version in .goreleaser
 
 func main() {
 	// A kept browser's recorder is this executable, started by the step

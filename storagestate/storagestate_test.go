@@ -117,7 +117,7 @@ func TestLoadAndSave(t *testing.T) {
 		if c, err := r.Cookie("sid"); err == nil {
 			who = c.Value
 		}
-		w.Write([]byte(`<!doctype html><link rel="icon" href="data:,"><p id="server">` + who + `</p>`))
+		_, _ = w.Write([]byte(`<!doctype html><link rel="icon" href="data:,"><p id="server">` + who + `</p>`))
 	}))
 	defer s.Close()
 

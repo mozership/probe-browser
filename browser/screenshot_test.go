@@ -170,7 +170,7 @@ func TestCaptureScreenshot_ARegionOfAScrolledPage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	img, _, err := image.Decode(f)
 	if err != nil {
 		t.Fatal(err)

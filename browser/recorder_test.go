@@ -26,9 +26,9 @@ func recorderPage(t *testing.T) *httptest.Server {
 		case "/api":
 			http.Error(w, "boom", http.StatusInternalServerError)
 		case "/other":
-			fmt.Fprint(w, `<!doctype html><title>o</title><link rel="icon" href="data:,"><p id="o">other</p>`)
+			_, _ = fmt.Fprint(w, `<!doctype html><title>o</title><link rel="icon" href="data:,"><p id="o">other</p>`)
 		default:
-			fmt.Fprint(w, `<!doctype html><title>t</title><link rel="icon" href="data:,"><p id="out">none</p>
+			_, _ = fmt.Fprint(w, `<!doctype html><title>t</title><link rel="icon" href="data:,"><p id="out">none</p>
 <button id="later" onclick="setTimeout(() => { fetch('/api'); console.error('late error'); }, 300)">Later</button>
 <button id="pop" onclick="setTimeout(() => window.open('/other'), 300)">Pop</button>
 <button id="now" onclick="fetch('/api'); console.error('now error')">Now</button>`)
