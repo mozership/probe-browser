@@ -19,7 +19,7 @@ import (
 	"github.com/chromedp/cdproto/webauthn"
 	"github.com/chromedp/chromedp"
 	"github.com/mozership/probe-browser/outline"
-	"github.com/mozership/probe/actionrpc"
+	"github.com/mozership/probe/sdk"
 )
 
 const (
@@ -303,7 +303,7 @@ func (req *Req) parseData(data map[string]any, opts []Option) error {
 	}
 
 	// Use MapToStructByTags to parse all fields including actions
-	err := actionrpc.DecodeParams(attributesAsLists(data), req)
+	err := sdk.DecodeParams(attributesAsLists(data), req)
 	if err != nil {
 		return fmt.Errorf("MapToStructByTags failed: %w", err)
 	}
@@ -314,7 +314,7 @@ func (req *Req) parseData(data map[string]any, opts []Option) error {
 	// accept only a duration string and silently keep the default for
 	// anything else, so a step given a number ran with 5 seconds.
 	if timeout, exists := data["timeout"]; exists {
-		parsed, err := actionrpc.ParseTimeout(timeout)
+		parsed, err := sdk.ParseTimeout(timeout)
 		if err != nil {
 			return err
 		}
@@ -1177,7 +1177,7 @@ func request(data map[string]any, sc *sessionCall, opts ...Option) (map[string]a
 		return createErrorResult(start, req, err)
 	}
 
-	mapRet, err := actionrpc.EncodeResult(result)
+	mapRet, err := sdk.EncodeResult(result)
 	if err != nil {
 		return createErrorResult(start, req, err)
 	}
@@ -1198,7 +1198,7 @@ func createErrorResult(start time.Time, req *Req, err error) (map[string]any, er
 		Status: 1, // failure
 	}
 
-	mapResult, mapErr := actionrpc.EncodeResult(result)
+	mapResult, mapErr := sdk.EncodeResult(result)
 	if mapErr != nil {
 		return map[string]any{}, mapErr
 	}

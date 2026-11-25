@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"github.com/hashicorp/go-hclog"
-	"github.com/mozership/probe/actionrpc"
+	"github.com/mozership/probe/sdk"
 )
 
 func TestBuildActionTasks_ViewportRefused(t *testing.T) {
@@ -39,13 +39,13 @@ func TestViewport_KeptInAKeptBrowser(t *testing.T) {
 		{map[string]any{"name": "navigate", "url": "data:text/html,<p>A page</p>"}, map[string]any{"name": "capture_screenshot", "id": "shot"}},
 		{map[string]any{"name": "capture_screenshot", "id": "shot"}},
 	} {
-		ret, next, err := a.RunStep(actionrpc.Call{
+		ret, next, err := a.RunStep(sdk.Call{
 			With: map[string]any{"session": true, "headless": true, "timeout": "30s", "evidence_dir": t.TempDir(),
 				"viewport_w": 800, "viewport_h": 600, "actions": actions},
 			State:     state,
-			Step:      actionrpc.Step{RunID: run},
-			Cleanups:  &actionrpc.Cleanups{},
-			Processes: &actionrpc.Processes{},
+			Step:      sdk.Step{RunID: run},
+			Cleanups:  &sdk.Cleanups{},
+			Processes: &sdk.Processes{},
 		})
 		if err != nil {
 			if strings.Contains(err.Error(), "executable file not found") {

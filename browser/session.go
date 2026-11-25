@@ -18,7 +18,7 @@ import (
 	cdptarget "github.com/chromedp/cdproto/target"
 	"github.com/chromedp/chromedp"
 	"github.com/chromedp/chromedp/remote"
-	"github.com/mozership/probe/actionrpc"
+	"github.com/mozership/probe/sdk"
 )
 
 // CacheDirEnv overrides the directory the browsers kept for the jobs of a
@@ -53,7 +53,7 @@ type session struct {
 type sessionCall struct {
 	runID     string
 	kept      *session
-	processes *actionrpc.Processes
+	processes *sdk.Processes
 	// started is the browser the step started, for the state it leaves.
 	started *session
 	// pending are the requests the step before left, and pendingOut those
@@ -242,7 +242,7 @@ func (req *Req) startSession(base context.Context) (context.Context, context.Can
 			discard()
 			return nil, nil, err
 		}
-		req.session.processes.Add(actionrpc.Process{PID: p.Pid})
+		req.session.processes.Add(sdk.Process{PID: p.Pid})
 	}
 	wsURL, _ := chromedp.KeptOpen(ctx)
 	s := &session{WSURL: wsURL, TargetID: string(c.Target.TargetID), Dir: profile}
