@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/chromedp/cdproto/network"
-	"github.com/mozership/probe/actionrpc"
+	"github.com/mozership/probe/sdk"
 )
 
 const cookiePage = "http://localhost:8090/state.html"
@@ -157,7 +157,7 @@ func TestBuildActionTasks_GetCookieRefused(t *testing.T) {
 
 func TestGetCookieActionMapping(t *testing.T) {
 	action := NewChromeDPAction()
-	err := actionrpc.DecodeParams(map[string]any{"name": "get_cookie", "id": "token", "cookie_name": "access_token"}, action)
+	err := sdk.DecodeParams(map[string]any{"name": "get_cookie", "id": "token", "cookie_name": "access_token"}, action)
 	if err != nil {
 		t.Fatalf("MapToStructByTags failed: %v", err)
 	}

@@ -17,7 +17,7 @@ import (
 
 	"github.com/chromedp/chromedp"
 	"github.com/hashicorp/go-hclog"
-	"github.com/mozership/probe/actionrpc"
+	"github.com/mozership/probe/sdk"
 )
 
 func TestSessionFromState(t *testing.T) {
@@ -43,7 +43,7 @@ func TestSessionFromState(t *testing.T) {
 
 func TestRunStep_SessionNeedsCleanups(t *testing.T) {
 	a := &Action{log: hclog.NewNullLogger()}
-	_, state, err := a.RunStep(actionrpc.Call{With: map[string]any{
+	_, state, err := a.RunStep(sdk.Call{With: map[string]any{
 		"session": true,
 		"actions": []any{map[string]any{"name": "navigate", "url": "about:blank"}},
 	}})
@@ -57,14 +57,14 @@ func TestRunStep_SessionNeedsCleanups(t *testing.T) {
 
 func TestRunStep_SessionRefusesPasskeys(t *testing.T) {
 	a := &Action{log: hclog.NewNullLogger()}
-	_, _, err := a.RunStep(actionrpc.Call{
+	_, _, err := a.RunStep(sdk.Call{
 		With: map[string]any{
 			"session":               true,
 			"virtual_authenticator": true,
 			"actions":               []any{map[string]any{"name": "navigate", "url": "about:blank"}},
 		},
-		Step:     actionrpc.Step{RunID: "r"},
-		Cleanups: &actionrpc.Cleanups{},
+		Step:     sdk.Step{RunID: "r"},
+		Cleanups: &sdk.Cleanups{},
 	})
 	if err == nil || !strings.Contains(err.Error(), "virtual_authenticator") {
 		t.Errorf("err = %v, want a refusal of virtual_authenticator", err)
@@ -110,16 +110,16 @@ func TestRunStep_KeepsTheBrowser(t *testing.T) {
 
 	a := &Action{log: hclog.NewNullLogger()}
 	run := "run-" + strconv.Itoa(os.Getpid())
-	procs := &actionrpc.Processes{}
+	procs := &sdk.Processes{}
 	call := func(state map[string]any, actions ...any) (map[string]any, map[string]any, error) {
-		return a.RunStep(actionrpc.Call{
+		return a.RunStep(sdk.Call{
 			// A runner of CI under -race can take more than 20 seconds to
 			// start the browser and fill the field. The page is saved in
 			// the test's directory when the step fails.
 			With:      map[string]any{"session": true, "headless": true, "timeout": "60s", "evidence_dir": t.TempDir(), "actions": actions},
 			State:     state,
-			Step:      actionrpc.Step{RunID: run},
-			Cleanups:  &actionrpc.Cleanups{},
+			Step:      sdk.Step{RunID: run},
+			Cleanups:  &sdk.Cleanups{},
 			Processes: procs,
 		})
 	}
@@ -161,7 +161,7 @@ func TestRunStep_KeepsTheBrowser(t *testing.T) {
 		t.Errorf("res = %s, want q kept from the first step", got)
 	}
 
-	if err := a.Cleanup(actionrpc.CleanupCall{RunID: run}); err != nil {
+	if err := a.Cleanup(sdk.CleanupCall{RunID: run}); err != nil {
 		t.Fatalf("cleanup: %v", err)
 	}
 	if alive(pid) {
@@ -190,14 +190,14 @@ func TestRunStep_AFailedFirstStepLeavesNoBrowser(t *testing.T) {
 	t.Setenv(CacheDirEnv, cache)
 	a := &Action{log: hclog.NewNullLogger()}
 	run := "run-failed-" + strconv.Itoa(os.Getpid())
-	procs := &actionrpc.Processes{}
-	_, state, err := a.RunStep(actionrpc.Call{
+	procs := &sdk.Processes{}
+	_, state, err := a.RunStep(sdk.Call{
 		With: map[string]any{
 			"session": true, "headless": true, "timeout": "3s", "evidence_dir": t.TempDir(),
 			"actions": []any{map[string]any{"name": "wait_visible", "selector": "#nothing"}},
 		},
-		Step:      actionrpc.Step{RunID: run},
-		Cleanups:  &actionrpc.Cleanups{},
+		Step:      sdk.Step{RunID: run},
+		Cleanups:  &sdk.Cleanups{},
 		Processes: procs,
 	})
 	if err == nil {
@@ -344,12 +344,12 @@ func TestRunStep_ARefGoneWhileWaitedForFails(t *testing.T) {
 	run := "run-gone-" + strconv.Itoa(os.Getpid())
 	t.Cleanup(func() { _ = cleanupSessions(run) })
 	call := func(state map[string]any, timeout string, actions ...any) (map[string]any, map[string]any, error) {
-		return a.RunStep(actionrpc.Call{
+		return a.RunStep(sdk.Call{
 			With:      map[string]any{"session": true, "headless": true, "timeout": timeout, "evidence_dir": t.TempDir(), "actions": actions},
 			State:     state,
-			Step:      actionrpc.Step{RunID: run},
-			Cleanups:  &actionrpc.Cleanups{},
-			Processes: &actionrpc.Processes{},
+			Step:      sdk.Step{RunID: run},
+			Cleanups:  &sdk.Cleanups{},
+			Processes: &sdk.Processes{},
 		})
 	}
 	ret, state, err := call(nil, "20s",
@@ -457,12 +457,12 @@ func TestRunStep_GoesOnWithARequestPending(t *testing.T) {
 	var state map[string]any
 	step := func(actions ...any) map[string]any {
 		t.Helper()
-		ret, next, err := a.RunStep(actionrpc.Call{
+		ret, next, err := a.RunStep(sdk.Call{
 			With:      map[string]any{"session": true, "headless": true, "timeout": "30s", "evidence_dir": t.TempDir(), "actions": actions},
 			State:     state,
-			Step:      actionrpc.Step{RunID: run},
-			Cleanups:  &actionrpc.Cleanups{},
-			Processes: &actionrpc.Processes{},
+			Step:      sdk.Step{RunID: run},
+			Cleanups:  &sdk.Cleanups{},
+			Processes: &sdk.Processes{},
 		})
 		if err != nil {
 			if strings.Contains(err.Error(), "executable file not found") {
@@ -543,12 +543,12 @@ func TestRunStep_ARequestAnsweredBetweenTheSteps(t *testing.T) {
 			var state map[string]any
 			step := func(actions ...any) map[string]any {
 				t.Helper()
-				ret, next, err := a.RunStep(actionrpc.Call{
+				ret, next, err := a.RunStep(sdk.Call{
 					With:      map[string]any{"session": true, "headless": true, "timeout": "30s", "evidence_dir": t.TempDir(), "actions": actions},
 					State:     state,
-					Step:      actionrpc.Step{RunID: run},
-					Cleanups:  &actionrpc.Cleanups{},
-					Processes: &actionrpc.Processes{},
+					Step:      sdk.Step{RunID: run},
+					Cleanups:  &sdk.Cleanups{},
+					Processes: &sdk.Processes{},
 				})
 				if err != nil {
 					if strings.Contains(err.Error(), "executable file not found") {

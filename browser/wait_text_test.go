@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mozership/probe/actionrpc"
+	"github.com/mozership/probe/sdk"
 )
 
 func TestTextMatch(t *testing.T) {
@@ -221,7 +221,7 @@ func TestParseData_EmptyTextFields(t *testing.T) {
 
 func TestWaitTextActionMapping(t *testing.T) {
 	action := NewChromeDPAction()
-	err := actionrpc.DecodeParams(map[string]any{
+	err := sdk.DecodeParams(map[string]any{
 		"name":         "wait_text",
 		"selector":     "#status",
 		"equals":       "Ready",

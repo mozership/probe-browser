@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"github.com/hashicorp/go-hclog"
-	"github.com/mozership/probe/actionrpc"
+	"github.com/mozership/probe/sdk"
 )
 
 // recorderPage is a page that does things after a click, once the step of
@@ -52,9 +52,9 @@ func keptSteps(t *testing.T, name string) func(with map[string]any, actions ...a
 		t.Helper()
 		w := map[string]any{"session": true, "headless": true, "timeout": "30s", "evidence_dir": t.TempDir(), "actions": actions}
 		maps.Copy(w, with)
-		ret, next, err := a.RunStep(actionrpc.Call{
-			With: w, State: state, Step: actionrpc.Step{RunID: run},
-			Cleanups: &actionrpc.Cleanups{}, Processes: &actionrpc.Processes{},
+		ret, next, err := a.RunStep(sdk.Call{
+			With: w, State: state, Step: sdk.Step{RunID: run},
+			Cleanups: &sdk.Cleanups{}, Processes: &sdk.Processes{},
 		})
 		if err != nil {
 			if strings.Contains(err.Error(), "executable file not found") {

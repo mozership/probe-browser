@@ -21,7 +21,7 @@ import (
 	cdptarget "github.com/chromedp/cdproto/target"
 	"github.com/chromedp/chromedp"
 	"github.com/chromedp/chromedp/remote"
-	"github.com/mozership/probe/actionrpc"
+	"github.com/mozership/probe/sdk"
 )
 
 // A kept browser has a recorder: a process of probe-browser of its own,
@@ -237,7 +237,7 @@ func keepOneTab(ctx context.Context, dir string) {
 // this executable in a group of its own, which the runner stops once the
 // run is over, and waits for it to connect. It returns the file it
 // writes.
-func startRecorder(s *session, processes *actionrpc.Processes, deadline time.Time) (string, error) {
+func startRecorder(s *session, processes *sdk.Processes, deadline time.Time) (string, error) {
 	exe, err := os.Executable()
 	if err != nil {
 		return "", err
@@ -268,7 +268,7 @@ func startRecorder(s *session, processes *actionrpc.Processes, deadline time.Tim
 		stopGroup(pid, s.Dir)
 		return "", err
 	}
-	processes.Add(actionrpc.Process{PID: pid})
+	processes.Add(sdk.Process{PID: pid})
 	path := filepath.Join(s.Dir, recorderFile)
 	// A third of what is left of the step at most, so that a step whose
 	// recorder does not come has the rest to go on without one.

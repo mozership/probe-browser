@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mozership/probe/actionrpc"
+	"github.com/mozership/probe/sdk"
 )
 
 func TestTarget_String(t *testing.T) {
@@ -97,7 +97,7 @@ func TestBuildActionTasks_EveryElementActionTakesHasText(t *testing.T) {
 
 func TestHasTextActionMapping(t *testing.T) {
 	action := NewChromeDPAction()
-	err := actionrpc.DecodeParams(map[string]any{"name": "click", "selector": "button", "has_text": "保存"}, action)
+	err := sdk.DecodeParams(map[string]any{"name": "click", "selector": "button", "has_text": "保存"}, action)
 	if err != nil {
 		t.Fatalf("MapToStructByTags failed: %v", err)
 	}
